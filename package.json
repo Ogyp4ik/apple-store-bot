@@ -8,6 +8,6 @@
   "dependencies": {
     "telegraf": "^4.15.3",
     "express": "^4.18.2",
-    "https-proxy-agent": "^7.0.2"
+    "firebase": "^10.7.0"
   }
 }
