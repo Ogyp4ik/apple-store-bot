@@ -22,7 +22,6 @@ const BOT_TOKEN = "8754493631:AAH9vZvWTS-SOHwk5Y0y7Rbr6klwmgeSgN0";
 const MINI_APP_URL = "https://apple-store-web-production.up.railway.app";
 
 // ID администраторов (кто может добавлять товары и получать уведомления)
-// Твой ID: 7441684316
 const ADMIN_IDS = [
     "7441684316",  // главный администратор
 ];
@@ -50,6 +49,52 @@ const bot = new Telegraf(BOT_TOKEN);
 
 // Хранилище сессий для добавления товаров
 const sessions = new Map();
+
+// ==================== МЕНЮ КОМАНД ====================
+
+// Устанавливаем меню команд для всех пользователей
+bot.telegram.setMyCommands([
+    { command: 'start', description: '🛍 Открыть магазин' },
+    { command: 'help', description: '❓ Помощь' }
+]);
+
+// Добавляем админские команды в меню (будут видны только админам)
+async function setAdminCommands() {
+    const adminCommands = [
+        { command: 'addproduct', description: '➕ Добавить товар' },
+        { command: 'admin', description: '👥 Список админов' },
+        { command: 'addadmin', description: '👑 Добавить админа' },
+        { command: 'removeadmin', description: '🗑 Удалить админа' },
+        { command: 'help', description: '❓ Помощь' },
+        { command: 'start', description: '🛍 Открыть магазин' }
+    ];
+    
+    // Устанавливаем админские команды для каждого админа
+    for (const adminId of ADMIN_IDS) {
+        try {
+            await bot.telegram.setMyCommands(adminCommands, { scope: { type: 'chat', chat_id: adminId } });
+            console.log(`✅ Меню команд установлено для админа ${adminId}`);
+        } catch (error) {
+            console.error(`❌ Ошибка установки меню для админа ${adminId}:`, error.message);
+        }
+    }
+}
+
+// ==================== КНОПКА МАГАЗИНА ====================
+
+// Функция для отправки сообщения с кнопкой магазина
+async function sendStoreButton(chatId) {
+    await bot.telegram.sendMessage(chatId, 
+        '🍎 Добро пожаловать в магазин "Яблочный"!\n\nНажмите кнопку ниже, чтобы открыть каталог:',
+        {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '🛍 Открыть магазин', web_app: { url: MINI_APP_URL } }]
+                ]
+            }
+        }
+    );
+}
 
 // ==================== ФУНКЦИИ РАБОТЫ С АДМИНАМИ ====================
 
@@ -127,7 +172,7 @@ async function watchOrders() {
 💡 Для обработки заказа свяжитесь с клиентом
                 `.trim();
                 
-                // Отправляем всем админам (без parse_mode)
+                // Отправляем всем админам
                 ADMIN_IDS.forEach(adminId => {
                     bot.telegram.sendMessage(adminId, message)
                         .catch(err => console.error('Ошибка отправки админу:', err.message));
@@ -144,18 +189,13 @@ async function watchOrders() {
 // ==================== КОМАНДЫ БОТА ====================
 
 // Команда /start
-bot.start((ctx) => {
-    ctx.reply(
-        '🍎 Добро пожаловать в магазин "Яблочный"!\n\n' +
-        'Нажмите кнопку ниже, чтобы открыть каталог:',
-        {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '🛍 Открыть магазин', web_app: { url: MINI_APP_URL } }]
-                ]
-            }
-        }
-    );
+bot.start(async (ctx) => {
+    await sendStoreButton(ctx.chat.id);
+});
+
+// Команда /shop (для вызова кнопки)
+bot.command('shop', async (ctx) => {
+    await sendStoreButton(ctx.chat.id);
 });
 
 // Команда /addproduct (только для админов)
@@ -210,6 +250,7 @@ bot.command('addadmin', async (ctx) => {
     
     ADMIN_IDS.push(newAdminId);
     await saveAdminsToDB(ADMIN_IDS);
+    await setAdminCommands(); // Обновляем меню команд для нового админа
     
     await ctx.reply(`✅ Новый администратор добавлен!\n\nID: ${newAdminId}`);
 });
@@ -242,6 +283,7 @@ bot.command('removeadmin', async (ctx) => {
     
     ADMIN_IDS.splice(index, 1);
     await saveAdminsToDB(ADMIN_IDS);
+    await setAdminCommands(); // Обновляем меню команд после удаления
     
     await ctx.reply(`✅ Администратор удален!\n\nID: ${removeId}`);
 });
@@ -284,7 +326,14 @@ bot.command('help', async (ctx) => {
 При каждом новом заказе вы получите уведомление`;
     }
     
-    await ctx.reply(helpText);
+    // Добавляем кнопку "Магазин" под справкой
+    await ctx.reply(helpText, {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '🛍 Открыть магазин', web_app: { url: MINI_APP_URL } }]
+            ]
+        }
+    });
 });
 
 // ==================== ОБРАБОТКА ДОБАВЛЕНИЯ ТОВАРОВ ====================
@@ -373,6 +422,15 @@ async function startBot() {
     try {
         // Загружаем список админов из Firebase
         await loadAdminsFromDB();
+        
+        // Устанавливаем базовое меню для всех
+        await bot.telegram.setMyCommands([
+            { command: 'start', description: '🛍 Открыть магазин' },
+            { command: 'help', description: '❓ Помощь' }
+        ]);
+        
+        // Устанавливаем админские команды для админов
+        await setAdminCommands();
         
         // Запускаем бота
         await bot.launch();
