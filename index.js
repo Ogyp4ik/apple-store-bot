@@ -25,7 +25,6 @@ const MINI_APP_URL = "https://apple-store-web-production.up.railway.app";
 // Твой ID: 7441684316
 const ADMIN_IDS = [
     "7441684316",  // главный администратор
-    // "123456789",  // можно добавить других админов через команду /addadmin
 ];
 
 // ==================== ИНИЦИАЛИЗАЦИЯ ====================
@@ -110,27 +109,27 @@ async function watchOrders() {
                     }
                 }
                 
-                // Формируем красивое сообщение
+                // Формируем сообщение (без HTML)
                 const message = `
-🛍 <b>НОВЫЙ ЗАКАЗ!</b>
+🛍 НОВЫЙ ЗАКАЗ!
 
-👤 <b>Клиент:</b> ${order.username ? '@' + order.username : 'Не указан'}
-🆔 <b>ID:</b> <code>${order.userId || '—'}</code>
-📝 <b>Имя:</b> ${order.firstName ? order.firstName + ' ' + (order.lastName || '') : '—'}
+👤 Клиент: ${order.username ? '@' + order.username : 'Не указан'}
+🆔 ID: ${order.userId || '—'}
+📝 Имя: ${order.firstName ? order.firstName + ' ' + (order.lastName || '') : '—'}
 
-📱 <b>Товар:</b> ${order.productName}
-💾 <b>Память:</b> ${order.storage || '—'}
-🎨 <b>Цвет:</b> ${order.color || '—'}
-💰 <b>Сумма:</b> ${(order.price || 0).toLocaleString()} ₽
+📱 Товар: ${order.productName}
+💾 Память: ${order.storage || '—'}
+🎨 Цвет: ${order.color || '—'}
+💰 Сумма: ${(order.price || 0).toLocaleString()} ₽
 
-📅 <b>Время:</b> ${date}
+📅 Время: ${date}
 
-💡 <i>Для обработки заказа свяжитесь с клиентом</i>
+💡 Для обработки заказа свяжитесь с клиентом
                 `.trim();
                 
-                // Отправляем всем админам
+                // Отправляем всем админам (без parse_mode)
                 ADMIN_IDS.forEach(adminId => {
-                    bot.telegram.sendMessage(adminId, message, { parse_mode: 'HTML' })
+                    bot.telegram.sendMessage(adminId, message)
                         .catch(err => console.error('Ошибка отправки админу:', err.message));
                 });
                 
@@ -146,9 +145,9 @@ async function watchOrders() {
 
 // Команда /start
 bot.start((ctx) => {
-    ctx.replyWithHTML(
+    ctx.reply(
         '🍎 Добро пожаловать в магазин "Яблочный"!\n\n' +
-        'Нажми кнопку ниже, чтобы открыть каталог:',
+        'Нажмите кнопку ниже, чтобы открыть каталог:',
         {
             reply_markup: {
                 inline_keyboard: [
@@ -179,16 +178,14 @@ bot.command('admin', async (ctx) => {
         return ctx.reply('❌ У вас нет доступа к этой команде');
     }
     
-    const adminList = ADMIN_IDS.map(id => {
-        return `👤 <code>${id}</code>`;
-    }).join('\n');
+    let adminList = '';
+    ADMIN_IDS.forEach((id, index) => {
+        adminList += `${index + 1}. ${id}\n`;
+    });
     
-    await ctx.replyWithHTML(`
-<b>👥 Список администраторов:</b>
-${adminList || '—'}
-
-<b>Всего:</b> ${ADMIN_IDS.length}
-    `.trim());
+    await ctx.reply(
+        `👥 Список администраторов:\n\n${adminList}\nВсего: ${ADMIN_IDS.length}`
+    );
 });
 
 // Команда /addadmin <id> (добавить нового админа)
@@ -214,7 +211,7 @@ bot.command('addadmin', async (ctx) => {
     ADMIN_IDS.push(newAdminId);
     await saveAdminsToDB(ADMIN_IDS);
     
-    await ctx.replyWithHTML(`✅ <b>Новый администратор добавлен!</b>\n\nID: <code>${newAdminId}</code>`);
+    await ctx.reply(`✅ Новый администратор добавлен!\n\nID: ${newAdminId}`);
 });
 
 // Команда /removeadmin <id> (удалить админа)
@@ -246,7 +243,7 @@ bot.command('removeadmin', async (ctx) => {
     ADMIN_IDS.splice(index, 1);
     await saveAdminsToDB(ADMIN_IDS);
     
-    await ctx.replyWithHTML(`✅ <b>Администратор удален!</b>\n\nID: <code>${removeId}</code>`);
+    await ctx.reply(`✅ Администратор удален!\n\nID: ${removeId}`);
 });
 
 // Команда /help (справка)
@@ -254,29 +251,27 @@ bot.command('help', async (ctx) => {
     const userId = ctx.from.id.toString();
     const isAdmin = ADMIN_IDS.includes(userId);
     
-    let helpText = `
-🍎 <b>Яблочный магазин - помощь</b>
+    let helpText = `🍎 Яблочный магазин - помощь
 
-<b>Основные команды:</b>
+Основные команды:
 /start - открыть магазин
 /help - показать эту справку
 
-<b>Для покупателей:</b>
+Для покупателей:
 • Нажмите кнопку "Открыть магазин"
 • Выберите товар
-• Нажмите "Купить" для оформления заказа
-    `.trim();
+• Нажмите "Купить" для оформления заказа`;
     
     if (isAdmin) {
         helpText += `
 
-<b>👑 Административные команды:</b>
+👑 Административные команды:
 /addproduct - добавить новый товар
 /admin - список администраторов
 /addadmin <id> - добавить администратора
 /removeadmin <id> - удалить администратора
 
-<b>Как добавить товар:</b>
+Как добавить товар:
 1. /addproduct
 2. Введите название
 3. Введите описание
@@ -285,12 +280,11 @@ bot.command('help', async (ctx) => {
 6. Введите цену
 7. Отправьте фото
 
-<b>Уведомления:</b>
-При каждом новом заказе вы получите уведомление
-        `.trim();
+Уведомления:
+При каждом новом заказе вы получите уведомление`;
     }
     
-    await ctx.replyWithHTML(helpText);
+    await ctx.reply(helpText);
 });
 
 // ==================== ОБРАБОТКА ДОБАВЛЕНИЯ ТОВАРОВ ====================
@@ -356,16 +350,14 @@ bot.on('photo', async (ctx) => {
             createdAt: new Date().toISOString()
         });
         
-        await ctx.replyWithHTML(`
-✅ <b>Товар успешно добавлен!</b>
-
-📱 <b>Название:</b> ${session.name}
-💾 <b>Память:</b> ${session.storage}
-🎨 <b>Цвет:</b> ${session.color}
-💰 <b>Цена:</b> ${session.price.toLocaleString()} ₽
-
-Можете добавить еще один через /addproduct
-        `.trim());
+        await ctx.reply(
+            `✅ Товар успешно добавлен!\n\n` +
+            `📱 Название: ${session.name}\n` +
+            `💾 Память: ${session.storage}\n` +
+            `🎨 Цвет: ${session.color}\n` +
+            `💰 Цена: ${session.price.toLocaleString()} ₽\n\n` +
+            `Можете добавить еще один через /addproduct`
+        );
         
         sessions.delete(userId);
     } catch (error) {
