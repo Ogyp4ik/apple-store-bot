@@ -50,6 +50,30 @@ const bot = new Telegraf(BOT_TOKEN);
 // Хранилище сессий для добавления товаров
 const sessions = new Map();
 
+// ==================== ПОСТОЯННАЯ КНОПКА В МЕНЮ ====================
+
+// Устанавливаем постоянную кнопку "Открыть магазин" в левом нижнем углу
+async function setPersistentMenu() {
+    try {
+        // Кнопка, которая будет всегда внизу
+        const persistentMenu = {
+            button: {
+                text: '🛍 Открыть магазин',
+                web_app: { url: MINI_APP_URL }
+            }
+        };
+        
+        // Устанавливаем для всех пользователей
+        await bot.telegram.setChatMenuButton({
+            menu_button: persistentMenu
+        });
+        
+        console.log('✅ Постоянная кнопка магазина установлена');
+    } catch (error) {
+        console.error('❌ Ошибка установки постоянной кнопки:', error.message);
+    }
+}
+
 // ==================== МЕНЮ КОМАНД ====================
 
 // Устанавливаем меню команд для всех пользователей
@@ -431,6 +455,9 @@ async function startBot() {
         
         // Устанавливаем админские команды для админов
         await setAdminCommands();
+        
+        // Устанавливаем постоянную кнопку в левом нижнем углу
+        await setPersistentMenu();
         
         // Запускаем бота
         await bot.launch();
