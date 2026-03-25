@@ -14,7 +14,7 @@ const firebaseConfig = {
 };
 
 const BOT_TOKEN = "8754493631:AAH9vZvWTS-SOHwk5Y0y7Rbr6klwmgeSgN0";
-const MINI_APP_URL = "apple-store-web-production.up.railway.app"; // Сюда вставь ссылку из Vercel
+const MINI_APP_URL = "https://apple-store-web-production.up.railway.app"; // Сюда вставь ссылку из Vercel
 const OWNER_ID = "7441684316"; // Твой Telegram ID
 
 const app = express();
