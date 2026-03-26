@@ -325,6 +325,40 @@ bot.command('help', async (ctx) => {
     await ctx.reply(helpText);
 });
 
+// Команда /checkorders - проверить заказы вручную
+bot.command('checkorders', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) {
+        return ctx.reply('❌ Нет доступа');
+    }
+    
+    try {
+        const ordersRef = collection(db, 'orders');
+        const snapshot = await getDocs(ordersRef);
+        const orders = [];
+        snapshot.forEach(doc => {
+            orders.push({ id: doc.id, ...doc.data() });
+        });
+        
+        if (orders.length === 0) {
+            await ctx.reply('📭 В базе нет заказов');
+        } else {
+            const lastOrder = orders[orders.length - 1];
+            await ctx.reply(
+                `📊 Статистика заказов:\n\n` +
+                `Всего: ${orders.length}\n` +
+                `Последний: ${lastOrder.productName || '—'} (${lastOrder.username || 'аноним'})\n` +
+                `Время: ${lastOrder.date || '—'}`
+            );
+        }
+        
+        console.log(`📊 Ручная проверка: ${orders.length} заказов в Firebase`);
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка при проверке');
+    }
+});
+
 // ==================== ДОБАВЛЕНИЕ ТОВАРОВ ====================
 
 bot.on('text', async (ctx) => {
