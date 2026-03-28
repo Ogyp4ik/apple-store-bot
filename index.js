@@ -1,7 +1,7 @@
 const express = require('express');
 const { Telegraf } = require('telegraf');
 const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, addDoc, getDocs, query, orderBy, onSnapshot, doc, getDoc, setDoc } = require('firebase/firestore');
+const { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, onSnapshot, doc, getDoc, setDoc } = require('firebase/firestore');
 
 // ==================== КОНФИГУРАЦИЯ ====================
 
