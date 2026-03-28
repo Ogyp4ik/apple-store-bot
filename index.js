@@ -47,6 +47,7 @@ const sessions = new Map();
 // Храним ID последнего отправленного заказа
 let lastSentOrderId = null;
 let checkCount = 0;
+let intervalId = null;
 
 // ==================== ФУНКЦИИ АДМИНОВ ====================
 
@@ -79,13 +80,14 @@ async function loadAdminsFromDB() {
     }
 }
 
-// ==================== ПЕРИОДИЧЕСКАЯ ПРОВЕРКА ЗАКАЗОВ ====================
+// ==================== ПРОВЕРКА ЗАКАЗОВ ====================
 
 async function checkNewOrders() {
     checkCount++;
+    const time = new Date().toLocaleTimeString();
+    console.log(`🔍 [${checkCount}] ${time} Проверка новых заказов...`);
+    
     try {
-        console.log(`🔍 [${checkCount}] Проверка новых заказов...`);
-        
         const q = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(5));
         const snapshot = await getDocs(q);
         
@@ -98,7 +100,7 @@ async function checkNewOrders() {
         const latestOrderId = latestOrder.id;
         const order = latestOrder.data();
         
-        console.log(`📦 [${checkCount}] Последний заказ: ID=${latestOrderId}, товар=${order.productName}`);
+        console.log(`📦 [${checkCount}] Последний заказ: ID=${latestOrderId.substring(0, 10)}..., товар=${order.productName}`);
         
         // Если это новый заказ (не отправляли раньше)
         if (lastSentOrderId !== latestOrderId) {
@@ -186,6 +188,7 @@ bot.command('help', async (ctx) => {
 /testorder - отправить тестовое уведомление
 /forcecheck - принудительно проверить и отправить уведомление
 /status - проверить статус бота
+/restart - перезапустить проверку заказов
 
 📝 Как добавить товар:
 1. /addproduct
@@ -202,7 +205,7 @@ bot.command('help', async (ctx) => {
     await ctx.reply(helpText);
 });
 
-// Команда /status - проверить статус
+// Команда /status
 bot.command('status', async (ctx) => {
     const userId = ctx.from.id.toString();
     if (!ADMIN_IDS.includes(userId)) {
@@ -212,10 +215,26 @@ bot.command('status', async (ctx) => {
     await ctx.reply(
         `📊 Статус бота:\n\n` +
         `Проверок выполнено: ${checkCount}\n` +
-        `Последний отправленный заказ ID: ${lastSentOrderId || 'нет'}\n` +
+        `Последний отправленный заказ ID: ${lastSentOrderId ? lastSentOrderId.substring(0, 20) + '...' : 'нет'}\n` +
         `Админов: ${ADMIN_IDS.length}\n` +
-        `Группа: ${GROUP_CHAT_ID || 'не настроена'}`
+        `Группа: ${GROUP_CHAT_ID || 'не настроена'}\n` +
+        `Интервал активен: ${intervalId ? 'да' : 'нет'}`
     );
+});
+
+// Команда /restart - перезапустить проверку
+bot.command('restart', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) {
+        return ctx.reply('❌ Нет доступа');
+    }
+    
+    if (intervalId) {
+        clearInterval(intervalId);
+    }
+    
+    intervalId = setInterval(checkNewOrders, 5000);
+    await ctx.reply('✅ Проверка заказов перезапущена (каждые 5 секунд)');
 });
 
 // Команда /addproduct
@@ -360,7 +379,7 @@ bot.command('forcecheck', async (ctx) => {
     
     await ctx.reply('🔄 Принудительная проверка...');
     await checkNewOrders();
-    await ctx.reply('✅ Проверка выполнена');
+    await ctx.reply(`✅ Проверка выполнена. Всего проверок: ${checkCount}`);
 });
 
 // ==================== ДОБАВЛЕНИЕ ТОВАРОВ ====================
@@ -446,13 +465,13 @@ async function startBot() {
         await bot.launch();
         console.log('✅ Бот запущен');
         
-        // Запускаем периодическую проверку каждые 10 секунд
-        setInterval(checkNewOrders, 10000);
-        console.log('✅ Периодическая проверка запущена (каждые 10 секунд)');
+        // Запускаем периодическую проверку каждые 5 секунд
+        intervalId = setInterval(checkNewOrders, 5000);
+        console.log('✅ Периодическая проверка запущена (каждые 5 секунд)');
         
         // Отправляем тестовое сообщение главному админу
         setTimeout(async () => {
-            await bot.telegram.sendMessage("7441684316", "✅ Бот перезапущен и работает. Проверка заказов каждые 10 секунд.");
+            await bot.telegram.sendMessage("7441684316", "✅ Бот перезапущен. Проверка заказов каждые 5 секунд.\n\nПосле нового заказа уведомление должно прийти в течение 5-10 секунд.");
         }, 3000);
         
     } catch (error) {
@@ -463,11 +482,13 @@ async function startBot() {
 startBot();
 
 process.once('SIGINT', () => {
+    if (intervalId) clearInterval(intervalId);
     bot.stop('SIGINT');
     server.close();
 });
 
 process.once('SIGTERM', () => {
+    if (intervalId) clearInterval(intervalId);
     bot.stop('SIGTERM');
     server.close();
 });
