@@ -368,6 +368,72 @@ bot.command('testorder', async (ctx) => {
     await ctx.reply('✅ Тестовое уведомление отправлено');
 });
 
+// Команда /forcecheck - принудительная проверка и отправка
+bot.command('forcecheck', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) {
+        return ctx.reply('❌ Нет доступа');
+    }
+    
+    try {
+        const q = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(5));
+        const snapshot = await getDocs(q);
+        
+        if (snapshot.empty) {
+            await ctx.reply('📭 Заказов нет');
+            return;
+        }
+        
+        let result = '📊 Последние заказы:\n\n';
+        
+        snapshot.forEach((doc, index) => {
+            const order = doc.data();
+            result += `${index + 1}. ${order.productName} - ${order.username || 'аноним'}\n`;
+        });
+        
+        await ctx.reply(result);
+        
+        // Отправляем последний заказ вручную
+        const latestOrder = snapshot.docs[0];
+        const order = latestOrder.data();
+        
+        let date = 'только что';
+        if (order.date) {
+            try {
+                date = new Date(order.date).toLocaleString('ru-RU');
+            } catch (e) {}
+        }
+        
+        const message = `
+🛍 ПРИНУДИТЕЛЬНОЕ УВЕДОМЛЕНИЕ
+
+👤 Клиент: ${order.username ? '@' + order.username : 'Не указан'}
+🆔 ID: ${order.userId || '—'}
+
+📱 Товар: ${order.productName}
+💾 Память: ${order.storage || '—'}
+🎨 Цвет: ${order.color || '—'}
+💰 Сумма: ${(order.price || 0).toLocaleString()} ₽
+
+📅 Время: ${date}
+        `.trim();
+        
+        if (GROUP_CHAT_ID) {
+            await bot.telegram.sendMessage(GROUP_CHAT_ID, message);
+        }
+        
+        for (const adminId of ADMIN_IDS) {
+            await bot.telegram.sendMessage(adminId, message);
+        }
+        
+        await ctx.reply('✅ Уведомление отправлено принудительно');
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка: ' + error.message);
+    }
+});
+
 // ==================== ДОБАВЛЕНИЕ ТОВАРОВ ====================
 
 bot.on('text', async (ctx) => {
