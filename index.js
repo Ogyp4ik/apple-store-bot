@@ -31,51 +31,10 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 
 const app = express();
-app.use(express.json()); // Для парсинга JSON
 const PORT = process.env.PORT || 10000;
 
 app.get('/', (req, res) => {
     res.send('🍎 Apple Store Bot is running!');
-});
-
-// Эндпоинт для приема уведомлений от Mini App
-app.post('/notify', async (req, res) => {
-    console.log('📬 Получен POST запрос на /notify');
-    try {
-        const order = req.body;
-        console.log('📦 Заказ от:', order.username, 'Товар:', order.productName);
-        
-        const message = `
-🛍 НОВЫЙ ЗАКАЗ!
-
-👤 Клиент: ${order.username ? '@' + order.username : 'Не указан'}
-🆔 ID: ${order.userId || '—'}
-
-📱 Товар: ${order.productName}
-💾 Память: ${order.storage || '—'}
-🎨 Цвет: ${order.color || '—'}
-💰 Сумма: ${(order.price || 0).toLocaleString()} ₽
-
-📅 Время: ${new Date().toLocaleString('ru-RU')}
-        `.trim();
-        
-        // Отправляем в группу
-        if (GROUP_CHAT_ID) {
-            await bot.telegram.sendMessage(GROUP_CHAT_ID, message);
-            console.log('✅ Отправлено в группу');
-        }
-        
-        // Отправляем админам
-        for (const adminId of ADMIN_IDS) {
-            await bot.telegram.sendMessage(adminId, message);
-            console.log(`✅ Отправлено админу ${adminId}`);
-        }
-        
-        res.json({ ok: true, message: 'Уведомление отправлено' });
-    } catch (error) {
-        console.error('❌ Ошибка:', error);
-        res.status(500).json({ error: error.message });
-    }
 });
 
 const server = app.listen(PORT, '0.0.0.0', () => {
@@ -84,6 +43,9 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 
 const bot = new Telegraf(BOT_TOKEN);
 const sessions = new Map();
+
+// Храним ID последнего отправленного заказа
+let lastSentOrderId = null;
 
 // ==================== ФУНКЦИИ АДМИНОВ ====================
 
@@ -116,9 +78,60 @@ async function loadAdminsFromDB() {
     }
 }
 
-// ==================== КОМАНДЫ БОТА ====================
+// ==================== ПРОВЕРКА ЗАКАЗОВ (КАЖДЫЕ 10 СЕКУНД) ====================
 
-// Команда /start
+async function checkOrders() {
+    try {
+        const q = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(5));
+        const snapshot = await getDocs(q);
+        
+        if (snapshot.empty) {
+            return;
+        }
+        
+        const latestOrder = snapshot.docs[0];
+        const orderId = latestOrder.id;
+        const order = latestOrder.data();
+        
+        // Если это новый заказ
+        if (lastSentOrderId !== orderId) {
+            lastSentOrderId = orderId;
+            
+            console.log(`🆕 НОВЫЙ ЗАКАЗ: ${order.productName} от ${order.username}`);
+            
+            const message = `
+🛍 НОВЫЙ ЗАКАЗ!
+
+👤 Клиент: ${order.username ? '@' + order.username : 'Не указан'}
+🆔 ID: ${order.userId || '—'}
+
+📱 Товар: ${order.productName}
+💾 Память: ${order.storage || '—'}
+🎨 Цвет: ${order.color || '—'}
+💰 Сумма: ${(order.price || 0).toLocaleString()} ₽
+
+📅 Время: ${new Date().toLocaleString('ru-RU')}
+            `.trim();
+            
+            // Отправляем в группу
+            if (GROUP_CHAT_ID) {
+                await bot.telegram.sendMessage(GROUP_CHAT_ID, message);
+                console.log('✅ Отправлено в группу');
+            }
+            
+            // Отправляем админам
+            for (const adminId of ADMIN_IDS) {
+                await bot.telegram.sendMessage(adminId, message);
+                console.log(`✅ Отправлено админу ${adminId}`);
+            }
+        }
+    } catch (error) {
+        console.error('❌ Ошибка проверки заказов:', error);
+    }
+}
+
+// ==================== КОМАНДЫ ====================
+
 bot.start(async (ctx) => {
     await ctx.reply(
         '🍎 Добро пожаловать в магазин "Яблочный"!\n\n' +
@@ -126,7 +139,6 @@ bot.start(async (ctx) => {
     );
 });
 
-// Команда /help
 bot.command('help', async (ctx) => {
     const isAdmin = ADMIN_IDS.includes(ctx.from.id.toString());
     
@@ -142,39 +154,36 @@ bot.command('help', async (ctx) => {
         helpText += `
 
 👑 Административные команды:
-/addproduct - добавить новый товар
-/admin - список администраторов
-/addadmin <id> - добавить администратора
-/removeadmin <id> - удалить администратора
-/checkorders - проверить заказы в базе
-/testorder - отправить тестовое уведомление
+/addproduct - добавить товар
+/admin - список админов
+/addadmin <id> - добавить админа
+/removeadmin <id> - удалить админа
+/checkorders - проверить заказы
 
 📝 Как добавить товар:
 1. /addproduct
 2. Введите название
 3. Введите описание
-4. Введите память (128GB, 256GB)
+4. Введите память
 5. Введите цвет
 6. Введите цену
 7. Отправьте фото
 
-🔔 Уведомления о заказах приходят мгновенно после нажатия "Купить"`;
+🔔 Уведомления приходят автоматически каждые 10 секунд`;
     }
     
     await ctx.reply(helpText);
 });
 
-// Команда /addproduct
 bot.command('addproduct', async (ctx) => {
     const userId = ctx.from.id.toString();
     if (!ADMIN_IDS.includes(userId)) {
-        return ctx.reply('❌ У вас нет доступа');
+        return ctx.reply('❌ Нет доступа');
     }
     sessions.set(userId, { step: 'name' });
-    await ctx.reply('📱 Введите название модели:');
+    await ctx.reply('📱 Название модели:');
 });
 
-// Команда /admin
 bot.command('admin', async (ctx) => {
     const userId = ctx.from.id.toString();
     if (!ADMIN_IDS.includes(userId)) {
@@ -187,36 +196,34 @@ bot.command('admin', async (ctx) => {
     await ctx.reply(`👥 Администраторы:\n\n${adminList}\nВсего: ${ADMIN_IDS.length}`);
 });
 
-// Команда /addadmin
 bot.command('addadmin', async (ctx) => {
     const userId = ctx.from.id.toString();
     const args = ctx.message.text.split(' ');
     
     if (userId !== "7441684316") {
-        return ctx.reply('❌ Только главный администратор');
+        return ctx.reply('❌ Только главный админ');
     }
     if (args.length < 2) {
-        return ctx.reply('⚠️ Использование: /addadmin <telegram_id>');
+        return ctx.reply('⚠️ /addadmin <id>');
     }
     const newAdminId = args[1];
     if (ADMIN_IDS.includes(newAdminId)) {
-        return ctx.reply('⚠️ Уже администратор');
+        return ctx.reply('⚠️ Уже админ');
     }
     ADMIN_IDS.push(newAdminId);
     await saveAdminsToDB(ADMIN_IDS);
-    await ctx.reply(`✅ Администратор добавлен: ${newAdminId}`);
+    await ctx.reply(`✅ Админ добавлен: ${newAdminId}`);
 });
 
-// Команда /removeadmin
 bot.command('removeadmin', async (ctx) => {
     const userId = ctx.from.id.toString();
     const args = ctx.message.text.split(' ');
     
     if (userId !== "7441684316") {
-        return ctx.reply('❌ Только главный администратор');
+        return ctx.reply('❌ Только главный админ');
     }
     if (args.length < 2) {
-        return ctx.reply('⚠️ Использование: /removeadmin <telegram_id>');
+        return ctx.reply('⚠️ /removeadmin <id>');
     }
     const removeId = args[1];
     if (removeId === userId) {
@@ -224,14 +231,13 @@ bot.command('removeadmin', async (ctx) => {
     }
     const index = ADMIN_IDS.indexOf(removeId);
     if (index === -1) {
-        return ctx.reply('⚠️ Не администратор');
+        return ctx.reply('⚠️ Не админ');
     }
     ADMIN_IDS.splice(index, 1);
     await saveAdminsToDB(ADMIN_IDS);
-    await ctx.reply(`✅ Администратор удален: ${removeId}`);
+    await ctx.reply(`✅ Админ удален: ${removeId}`);
 });
 
-// Команда /checkorders
 bot.command('checkorders', async (ctx) => {
     const userId = ctx.from.id.toString();
     if (!ADMIN_IDS.includes(userId)) {
@@ -239,67 +245,23 @@ bot.command('checkorders', async (ctx) => {
     }
     
     try {
-        const ordersRef = collection(db, 'orders');
-        const snapshot = await getDocs(ordersRef);
+        const snapshot = await getDocs(collection(db, 'orders'));
         const orders = [];
-        snapshot.forEach(doc => {
-            orders.push({ id: doc.id, ...doc.data() });
-        });
+        snapshot.forEach(doc => orders.push(doc.data()));
         
         if (orders.length === 0) {
-            await ctx.reply('📭 В базе нет заказов');
+            await ctx.reply('📭 Заказов нет');
         } else {
-            const lastOrder = orders[orders.length - 1];
-            await ctx.reply(
-                `📊 Статистика заказов:\n\n` +
-                `Всего: ${orders.length}\n` +
-                `Последний: ${lastOrder.productName || '—'} (${lastOrder.username || 'аноним'})\n` +
-                `Время: ${lastOrder.date || '—'}`
-            );
+            const last = orders[orders.length - 1];
+            await ctx.reply(`📊 Всего заказов: ${orders.length}\nПоследний: ${last.productName} (${last.username})`);
         }
     } catch (error) {
-        console.error('Ошибка:', error);
-        await ctx.reply('❌ Ошибка при проверке');
+        await ctx.reply('❌ Ошибка');
     }
-});
-
-// Команда /testorder
-bot.command('testorder', async (ctx) => {
-    const userId = ctx.from.id.toString();
-    if (!ADMIN_IDS.includes(userId)) {
-        return ctx.reply('❌ Нет доступа');
-    }
-    
-    const testMessage = `
-🛍 ТЕСТОВОЕ УВЕДОМЛЕНИЕ
-
-👤 Клиент: @testuser
-🆔 ID: 123456789
-
-📱 Товар: iPhone 17 (тест)
-💾 Память: 256GB
-🎨 Цвет: Black
-💰 Сумма: 99 900 ₽
-
-📅 Время: ${new Date().toLocaleString('ru-RU')}
-    `.trim();
-    
-    if (GROUP_CHAT_ID) {
-        await bot.telegram.sendMessage(GROUP_CHAT_ID, testMessage)
-            .catch(err => console.error('❌ Ошибка группы:', err.message));
-    }
-    
-    for (const adminId of ADMIN_IDS) {
-        await bot.telegram.sendMessage(adminId, testMessage)
-            .catch(err => console.error('❌ Ошибка админу:', err.message));
-    }
-    
-    await ctx.reply('✅ Тестовое уведомление отправлено');
 });
 
 // ==================== ДОБАВЛЕНИЕ ТОВАРОВ ====================
 
-// Обработка текста (диалог добавления товара)
 bot.on('text', async (ctx) => {
     const userId = ctx.from.id.toString();
     const session = sessions.get(userId);
@@ -329,16 +291,13 @@ bot.on('text', async (ctx) => {
     }
     else if (session.step === 'price') {
         const price = parseInt(message);
-        if (isNaN(price)) {
-            return ctx.reply('❌ Введите число!');
-        }
+        if (isNaN(price)) return ctx.reply('❌ Введите число!');
         session.price = price;
         session.step = 'image';
         await ctx.reply('📸 Отправьте фото:');
     }
 });
 
-// Обработка фото
 bot.on('photo', async (ctx) => {
     const userId = ctx.from.id.toString();
     const session = sessions.get(userId);
@@ -358,17 +317,9 @@ bot.on('photo', async (ctx) => {
             createdAt: new Date().toISOString()
         });
         
-        await ctx.reply(
-            `✅ Товар добавлен!\n\n` +
-            `📱 ${session.name}\n` +
-            `💾 ${session.storage}\n` +
-            `🎨 ${session.color}\n` +
-            `💰 ${session.price.toLocaleString()} ₽`
-        );
-        
+        await ctx.reply(`✅ Товар добавлен!\n${session.name} - ${session.price.toLocaleString()} ₽`);
         sessions.delete(userId);
     } catch (error) {
-        console.error('Ошибка:', error);
         await ctx.reply('❌ Ошибка, попробуйте снова');
         sessions.delete(userId);
     }
@@ -381,15 +332,16 @@ async function startBot() {
         await loadAdminsFromDB();
         await bot.launch();
         console.log('✅ Бот запущен');
-        console.log('✅ Endpoint /notify доступен на порту ' + PORT);
         
-        // Отправляем тестовое сообщение главному админу
+        // Запускаем проверку заказов каждые 10 секунд
+        setInterval(checkOrders, 10000);
+        console.log('✅ Проверка заказов запущена (каждые 10 секунд)');
+        
         setTimeout(async () => {
-            await bot.telegram.sendMessage("7441684316", "✅ Бот перезапущен. Теперь уведомления приходят мгновенно после нажатия 'Купить' в магазине.");
+            await bot.telegram.sendMessage("7441684316", "✅ Бот перезапущен. Проверка заказов каждые 10 секунд.");
         }, 3000);
-        
     } catch (error) {
-        console.error('❌ Ошибка запуска бота:', error);
+        console.error('❌ Ошибка:', error);
     }
 }
 
@@ -399,12 +351,10 @@ process.once('SIGINT', () => {
     bot.stop('SIGINT');
     server.close();
 });
-
 process.once('SIGTERM', () => {
     bot.stop('SIGTERM');
     server.close();
 });
-
 process.on('unhandledRejection', (error) => {
-    console.error('❌ Необработанная ошибка:', error.message);
+    console.error('❌ Ошибка:', error.message);
 });
