@@ -31,10 +31,51 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 
 const app = express();
+app.use(express.json()); // Для парсинга JSON
 const PORT = process.env.PORT || 10000;
 
 app.get('/', (req, res) => {
     res.send('🍎 Apple Store Bot is running!');
+});
+
+// Эндпоинт для приема уведомлений от Mini App
+app.post('/notify', async (req, res) => {
+    console.log('📬 Получен POST запрос на /notify');
+    try {
+        const order = req.body;
+        console.log('📦 Заказ от:', order.username, 'Товар:', order.productName);
+        
+        const message = `
+🛍 НОВЫЙ ЗАКАЗ!
+
+👤 Клиент: ${order.username ? '@' + order.username : 'Не указан'}
+🆔 ID: ${order.userId || '—'}
+
+📱 Товар: ${order.productName}
+💾 Память: ${order.storage || '—'}
+🎨 Цвет: ${order.color || '—'}
+💰 Сумма: ${(order.price || 0).toLocaleString()} ₽
+
+📅 Время: ${new Date().toLocaleString('ru-RU')}
+        `.trim();
+        
+        // Отправляем в группу
+        if (GROUP_CHAT_ID) {
+            await bot.telegram.sendMessage(GROUP_CHAT_ID, message);
+            console.log('✅ Отправлено в группу');
+        }
+        
+        // Отправляем админам
+        for (const adminId of ADMIN_IDS) {
+            await bot.telegram.sendMessage(adminId, message);
+            console.log(`✅ Отправлено админу ${adminId}`);
+        }
+        
+        res.json({ ok: true, message: 'Уведомление отправлено' });
+    } catch (error) {
+        console.error('❌ Ошибка:', error);
+        res.status(500).json({ error: error.message });
+    }
 });
 
 const server = app.listen(PORT, '0.0.0.0', () => {
@@ -43,11 +84,6 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 
 const bot = new Telegraf(BOT_TOKEN);
 const sessions = new Map();
-
-// Храним ID последнего отправленного заказа
-let lastSentOrderId = null;
-let checkCount = 0;
-let intervalId = null;
 
 // ==================== ФУНКЦИИ АДМИНОВ ====================
 
@@ -80,81 +116,7 @@ async function loadAdminsFromDB() {
     }
 }
 
-// ==================== ПРОВЕРКА ЗАКАЗОВ ====================
-
-async function checkNewOrders() {
-    checkCount++;
-    const time = new Date().toLocaleTimeString();
-    console.log(`🔍 [${checkCount}] ${time} Проверка новых заказов...`);
-    
-    try {
-        const q = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(5));
-        const snapshot = await getDocs(q);
-        
-        if (snapshot.empty) {
-            console.log(`📭 [${checkCount}] Заказов нет`);
-            return;
-        }
-        
-        const latestOrder = snapshot.docs[0];
-        const latestOrderId = latestOrder.id;
-        const order = latestOrder.data();
-        
-        console.log(`📦 [${checkCount}] Последний заказ: ID=${latestOrderId.substring(0, 10)}..., товар=${order.productName}`);
-        
-        // Если это новый заказ (не отправляли раньше)
-        if (lastSentOrderId !== latestOrderId) {
-            lastSentOrderId = latestOrderId;
-            
-            console.log(`🆕 [${checkCount}] НОВЫЙ ЗАКАЗ! Отправляем уведомление...`);
-            
-            let date = 'только что';
-            if (order.date) {
-                try {
-                    date = new Date(order.date).toLocaleString('ru-RU');
-                } catch (e) {}
-            }
-            
-            const message = `
-🛍 НОВЫЙ ЗАКАЗ!
-
-👤 Клиент: ${order.username ? '@' + order.username : 'Не указан'}
-🆔 ID: ${order.userId || '—'}
-
-📱 Товар: ${order.productName}
-💾 Память: ${order.storage || '—'}
-🎨 Цвет: ${order.color || '—'}
-💰 Сумма: ${(order.price || 0).toLocaleString()} ₽
-
-📅 Время: ${date}
-            `.trim();
-            
-            // Отправляем в группу
-            if (GROUP_CHAT_ID) {
-                try {
-                    await bot.telegram.sendMessage(GROUP_CHAT_ID, message);
-                    console.log(`✅ [${checkCount}] Отправлено в группу`);
-                } catch (err) {
-                    console.error(`❌ [${checkCount}] Ошибка группы:`, err.message);
-                }
-            }
-            
-            // Отправляем админам
-            for (const adminId of ADMIN_IDS) {
-                try {
-                    await bot.telegram.sendMessage(adminId, message);
-                    console.log(`✅ [${checkCount}] Отправлено админу ${adminId}`);
-                } catch (err) {
-                    console.error(`❌ [${checkCount}] Ошибка админу ${adminId}:`, err.message);
-                }
-            }
-        }
-    } catch (error) {
-        console.error(`❌ [${checkCount}] Ошибка проверки заказов:`, error.message);
-    }
-}
-
-// ==================== КОМАНДЫ ====================
+// ==================== КОМАНДЫ БОТА ====================
 
 // Команда /start
 bot.start(async (ctx) => {
@@ -186,9 +148,6 @@ bot.command('help', async (ctx) => {
 /removeadmin <id> - удалить администратора
 /checkorders - проверить заказы в базе
 /testorder - отправить тестовое уведомление
-/forcecheck - принудительно проверить и отправить уведомление
-/status - проверить статус бота
-/restart - перезапустить проверку заказов
 
 📝 Как добавить товар:
 1. /addproduct
@@ -199,42 +158,10 @@ bot.command('help', async (ctx) => {
 6. Введите цену
 7. Отправьте фото
 
-🔔 Уведомления о заказах приходят в группу и в личные сообщения`;
+🔔 Уведомления о заказах приходят мгновенно после нажатия "Купить"`;
     }
     
     await ctx.reply(helpText);
-});
-
-// Команда /status
-bot.command('status', async (ctx) => {
-    const userId = ctx.from.id.toString();
-    if (!ADMIN_IDS.includes(userId)) {
-        return ctx.reply('❌ Нет доступа');
-    }
-    
-    await ctx.reply(
-        `📊 Статус бота:\n\n` +
-        `Проверок выполнено: ${checkCount}\n` +
-        `Последний отправленный заказ ID: ${lastSentOrderId ? lastSentOrderId.substring(0, 20) + '...' : 'нет'}\n` +
-        `Админов: ${ADMIN_IDS.length}\n` +
-        `Группа: ${GROUP_CHAT_ID || 'не настроена'}\n` +
-        `Интервал активен: ${intervalId ? 'да' : 'нет'}`
-    );
-});
-
-// Команда /restart - перезапустить проверку
-bot.command('restart', async (ctx) => {
-    const userId = ctx.from.id.toString();
-    if (!ADMIN_IDS.includes(userId)) {
-        return ctx.reply('❌ Нет доступа');
-    }
-    
-    if (intervalId) {
-        clearInterval(intervalId);
-    }
-    
-    intervalId = setInterval(checkNewOrders, 5000);
-    await ctx.reply('✅ Проверка заказов перезапущена (каждые 5 секунд)');
 });
 
 // Команда /addproduct
@@ -370,20 +297,9 @@ bot.command('testorder', async (ctx) => {
     await ctx.reply('✅ Тестовое уведомление отправлено');
 });
 
-// Команда /forcecheck
-bot.command('forcecheck', async (ctx) => {
-    const userId = ctx.from.id.toString();
-    if (!ADMIN_IDS.includes(userId)) {
-        return ctx.reply('❌ Нет доступа');
-    }
-    
-    await ctx.reply('🔄 Принудительная проверка...');
-    await checkNewOrders();
-    await ctx.reply(`✅ Проверка выполнена. Всего проверок: ${checkCount}`);
-});
-
 // ==================== ДОБАВЛЕНИЕ ТОВАРОВ ====================
 
+// Обработка текста (диалог добавления товара)
 bot.on('text', async (ctx) => {
     const userId = ctx.from.id.toString();
     const session = sessions.get(userId);
@@ -422,6 +338,7 @@ bot.on('text', async (ctx) => {
     }
 });
 
+// Обработка фото
 bot.on('photo', async (ctx) => {
     const userId = ctx.from.id.toString();
     const session = sessions.get(userId);
@@ -464,14 +381,11 @@ async function startBot() {
         await loadAdminsFromDB();
         await bot.launch();
         console.log('✅ Бот запущен');
-        
-        // Запускаем периодическую проверку каждые 5 секунд
-        intervalId = setInterval(checkNewOrders, 5000);
-        console.log('✅ Периодическая проверка запущена (каждые 5 секунд)');
+        console.log('✅ Endpoint /notify доступен на порту ' + PORT);
         
         // Отправляем тестовое сообщение главному админу
         setTimeout(async () => {
-            await bot.telegram.sendMessage("7441684316", "✅ Бот перезапущен. Проверка заказов каждые 5 секунд.\n\nПосле нового заказа уведомление должно прийти в течение 5-10 секунд.");
+            await bot.telegram.sendMessage("7441684316", "✅ Бот перезапущен. Теперь уведомления приходят мгновенно после нажатия 'Купить' в магазине.");
         }, 3000);
         
     } catch (error) {
@@ -482,13 +396,11 @@ async function startBot() {
 startBot();
 
 process.once('SIGINT', () => {
-    if (intervalId) clearInterval(intervalId);
     bot.stop('SIGINT');
     server.close();
 });
 
 process.once('SIGTERM', () => {
-    if (intervalId) clearInterval(intervalId);
     bot.stop('SIGTERM');
     server.close();
 });
