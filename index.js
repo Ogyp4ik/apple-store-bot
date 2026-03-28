@@ -46,6 +46,7 @@ const sessions = new Map();
 
 // Храним ID последнего отправленного заказа
 let lastSentOrderId = null;
+let checkCount = 0;
 
 // ==================== ФУНКЦИИ АДМИНОВ ====================
 
@@ -81,14 +82,15 @@ async function loadAdminsFromDB() {
 // ==================== ПЕРИОДИЧЕСКАЯ ПРОВЕРКА ЗАКАЗОВ ====================
 
 async function checkNewOrders() {
+    checkCount++;
     try {
-        console.log('🔍 Проверка новых заказов...');
+        console.log(`🔍 [${checkCount}] Проверка новых заказов...`);
         
         const q = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(5));
         const snapshot = await getDocs(q);
         
         if (snapshot.empty) {
-            console.log('📭 Заказов нет');
+            console.log(`📭 [${checkCount}] Заказов нет`);
             return;
         }
         
@@ -96,13 +98,13 @@ async function checkNewOrders() {
         const latestOrderId = latestOrder.id;
         const order = latestOrder.data();
         
-        console.log(`📦 Последний заказ: ID=${latestOrderId}, товар=${order.productName}`);
+        console.log(`📦 [${checkCount}] Последний заказ: ID=${latestOrderId}, товар=${order.productName}`);
         
         // Если это новый заказ (не отправляли раньше)
         if (lastSentOrderId !== latestOrderId) {
             lastSentOrderId = latestOrderId;
             
-            console.log(`🆕 НОВЫЙ ЗАКАЗ! Отправляем уведомление...`);
+            console.log(`🆕 [${checkCount}] НОВЫЙ ЗАКАЗ! Отправляем уведомление...`);
             
             let date = 'только что';
             if (order.date) {
@@ -127,20 +129,26 @@ async function checkNewOrders() {
             
             // Отправляем в группу
             if (GROUP_CHAT_ID) {
-                await bot.telegram.sendMessage(GROUP_CHAT_ID, message)
-                    .then(() => console.log('✅ Отправлено в группу'))
-                    .catch(err => console.error('❌ Ошибка группы:', err.message));
+                try {
+                    await bot.telegram.sendMessage(GROUP_CHAT_ID, message);
+                    console.log(`✅ [${checkCount}] Отправлено в группу`);
+                } catch (err) {
+                    console.error(`❌ [${checkCount}] Ошибка группы:`, err.message);
+                }
             }
             
             // Отправляем админам
             for (const adminId of ADMIN_IDS) {
-                await bot.telegram.sendMessage(adminId, message)
-                    .then(() => console.log(`✅ Отправлено админу ${adminId}`))
-                    .catch(err => console.error(`❌ Ошибка админу ${adminId}:`, err.message));
+                try {
+                    await bot.telegram.sendMessage(adminId, message);
+                    console.log(`✅ [${checkCount}] Отправлено админу ${adminId}`);
+                } catch (err) {
+                    console.error(`❌ [${checkCount}] Ошибка админу ${adminId}:`, err.message);
+                }
             }
         }
     } catch (error) {
-        console.error('❌ Ошибка проверки заказов:', error);
+        console.error(`❌ [${checkCount}] Ошибка проверки заказов:`, error.message);
     }
 }
 
@@ -177,6 +185,7 @@ bot.command('help', async (ctx) => {
 /checkorders - проверить заказы в базе
 /testorder - отправить тестовое уведомление
 /forcecheck - принудительно проверить и отправить уведомление
+/status - проверить статус бота
 
 📝 Как добавить товар:
 1. /addproduct
@@ -191,6 +200,22 @@ bot.command('help', async (ctx) => {
     }
     
     await ctx.reply(helpText);
+});
+
+// Команда /status - проверить статус
+bot.command('status', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) {
+        return ctx.reply('❌ Нет доступа');
+    }
+    
+    await ctx.reply(
+        `📊 Статус бота:\n\n` +
+        `Проверок выполнено: ${checkCount}\n` +
+        `Последний отправленный заказ ID: ${lastSentOrderId || 'нет'}\n` +
+        `Админов: ${ADMIN_IDS.length}\n` +
+        `Группа: ${GROUP_CHAT_ID || 'не настроена'}`
+    );
 });
 
 // Команда /addproduct
@@ -333,60 +358,9 @@ bot.command('forcecheck', async (ctx) => {
         return ctx.reply('❌ Нет доступа');
     }
     
-    try {
-        const q = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(5));
-        const snapshot = await getDocs(q);
-        
-        if (snapshot.empty) {
-            await ctx.reply('📭 Заказов нет');
-            return;
-        }
-        
-        let result = '📊 Последние заказы:\n\n';
-        snapshot.forEach((doc, index) => {
-            const order = doc.data();
-            result += `${index + 1}. ${order.productName} - ${order.username || 'аноним'}\n`;
-        });
-        await ctx.reply(result);
-        
-        const latestOrder = snapshot.docs[0];
-        const order = latestOrder.data();
-        
-        let date = 'только что';
-        if (order.date) {
-            try {
-                date = new Date(order.date).toLocaleString('ru-RU');
-            } catch (e) {}
-        }
-        
-        const message = `
-🛍 ПРИНУДИТЕЛЬНОЕ УВЕДОМЛЕНИЕ
-
-👤 Клиент: ${order.username ? '@' + order.username : 'Не указан'}
-🆔 ID: ${order.userId || '—'}
-
-📱 Товар: ${order.productName}
-💾 Память: ${order.storage || '—'}
-🎨 Цвет: ${order.color || '—'}
-💰 Сумма: ${(order.price || 0).toLocaleString()} ₽
-
-📅 Время: ${date}
-        `.trim();
-        
-        if (GROUP_CHAT_ID) {
-            await bot.telegram.sendMessage(GROUP_CHAT_ID, message);
-        }
-        
-        for (const adminId of ADMIN_IDS) {
-            await bot.telegram.sendMessage(adminId, message);
-        }
-        
-        await ctx.reply('✅ Уведомление отправлено принудительно');
-        
-    } catch (error) {
-        console.error('Ошибка:', error);
-        await ctx.reply('❌ Ошибка: ' + error.message);
-    }
+    await ctx.reply('🔄 Принудительная проверка...');
+    await checkNewOrders();
+    await ctx.reply('✅ Проверка выполнена');
 });
 
 // ==================== ДОБАВЛЕНИЕ ТОВАРОВ ====================
@@ -472,9 +446,14 @@ async function startBot() {
         await bot.launch();
         console.log('✅ Бот запущен');
         
-        // Запускаем периодическую проверку каждые 5 секунд
-        setInterval(checkNewOrders, 5000);
-        console.log('✅ Периодическая проверка запущена (каждые 5 секунд)');
+        // Запускаем периодическую проверку каждые 10 секунд
+        setInterval(checkNewOrders, 10000);
+        console.log('✅ Периодическая проверка запущена (каждые 10 секунд)');
+        
+        // Отправляем тестовое сообщение главному админу
+        setTimeout(async () => {
+            await bot.telegram.sendMessage("7441684316", "✅ Бот перезапущен и работает. Проверка заказов каждые 10 секунд.");
+        }, 3000);
         
     } catch (error) {
         console.error('❌ Ошибка запуска бота:', error);
