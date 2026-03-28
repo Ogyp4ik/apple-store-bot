@@ -44,6 +44,9 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 const bot = new Telegraf(BOT_TOKEN);
 const sessions = new Map();
 
+// Храним последний известный заказ для периодической проверки
+let lastOrderId = null;
+
 // ==================== ФУНКЦИИ АДМИНОВ ====================
 
 async function saveAdminsToDB(admins) {
@@ -75,10 +78,10 @@ async function loadAdminsFromDB() {
     }
 }
 
-// ==================== ОТСЛЕЖИВАНИЕ ЗАКАЗОВ ====================
+// ==================== ОТСЛЕЖИВАНИЕ ЗАКАЗОВ (onSnapshot) ====================
 
 async function watchOrders() {
-    console.log('👀 Отслеживание заказов запущено...');
+    console.log('👀 Отслеживание заказов запущено (onSnapshot)...');
     
     const q = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(10));
     
@@ -88,7 +91,7 @@ async function watchOrders() {
         snapshot.docChanges().forEach((change) => {
             if (change.type === 'added') {
                 const order = change.doc.data();
-                console.log(`🆕 Новый заказ: ${order.productName}`);
+                console.log(`🆕 Новый заказ (onSnapshot): ${order.productName}`);
                 
                 let date = 'только что';
                 if (order.date) {
@@ -123,8 +126,65 @@ async function watchOrders() {
             }
         });
     }, (error) => {
-        console.error('❌ Ошибка отслеживания:', error);
+        console.error('❌ Ошибка onSnapshot:', error);
     });
+}
+
+// ==================== ПЕРИОДИЧЕСКАЯ ПРОВЕРКА ЗАКАЗОВ ====================
+
+async function checkNewOrders() {
+    try {
+        const q = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(5));
+        const snapshot = await getDocs(q);
+        
+        if (!snapshot.empty) {
+            const latestOrder = snapshot.docs[0];
+            const latestOrderId = latestOrder.id;
+            const order = latestOrder.data();
+            
+            // Если это новый заказ
+            if (lastOrderId !== latestOrderId) {
+                lastOrderId = latestOrderId;
+                
+                console.log(`🆕 Обнаружен новый заказ (периодическая проверка): ${order.productName}`);
+                
+                let date = 'только что';
+                if (order.date) {
+                    try {
+                        date = new Date(order.date).toLocaleString('ru-RU');
+                    } catch (e) {}
+                }
+                
+                const message = `
+🛍 НОВЫЙ ЗАКАЗ!
+
+👤 Клиент: ${order.username ? '@' + order.username : 'Не указан'}
+🆔 ID: ${order.userId || '—'}
+
+📱 Товар: ${order.productName}
+💾 Память: ${order.storage || '—'}
+🎨 Цвет: ${order.color || '—'}
+💰 Сумма: ${(order.price || 0).toLocaleString()} ₽
+
+📅 Время: ${date}
+                `.trim();
+                
+                // Отправляем в группу
+                if (GROUP_CHAT_ID) {
+                    await bot.telegram.sendMessage(GROUP_CHAT_ID, message)
+                        .catch(err => console.error('❌ Ошибка группы:', err.message));
+                }
+                
+                // Отправляем админам
+                for (const adminId of ADMIN_IDS) {
+                    await bot.telegram.sendMessage(adminId, message)
+                        .catch(err => console.error(`❌ Ошибка админу ${adminId}:`, err.message));
+                }
+            }
+        }
+    } catch (error) {
+        console.error('❌ Ошибка периодической проверки заказов:', error);
+    }
 }
 
 // ==================== КОМАНДЫ ====================
@@ -390,10 +450,17 @@ async function startBot() {
         await loadAdminsFromDB();
         await bot.launch();
         console.log('✅ Бот запущен');
+        
+        // Запускаем оба способа отслеживания заказов
         watchOrders();
-        console.log('✅ Отслеживание заказов запущено');
+        console.log('✅ onSnapshot отслеживание запущено');
+        
+        // Запускаем периодическую проверку каждые 10 секунд
+        setInterval(checkNewOrders, 10000);
+        console.log('✅ Периодическая проверка запущена (каждые 10 секунд)');
+        
     } catch (error) {
-        console.error('❌ Ошибка:', error);
+        console.error('❌ Ошибка запуска бота:', error);
     }
 }
 
@@ -410,5 +477,5 @@ process.once('SIGTERM', () => {
 });
 
 process.on('unhandledRejection', (error) => {
-    console.error('❌ Ошибка:', error.message);
+    console.error('❌ Необработанная ошибка:', error.message);
 });
