@@ -1,7 +1,7 @@
 const express = require('express');
 const { Telegraf } = require('telegraf');
 const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, onSnapshot, doc, getDoc, setDoc } = require('firebase/firestore');
+const { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, doc, getDoc, setDoc } = require('firebase/firestore');
 
 // ==================== КОНФИГУРАЦИЯ ====================
 
@@ -44,8 +44,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 const bot = new Telegraf(BOT_TOKEN);
 const sessions = new Map();
 
-// Храним последний известный заказ для периодической проверки
-let lastOrderId = null;
+// Храним ID последнего отправленного заказа
+let lastSentOrderId = null;
 
 // ==================== ФУНКЦИИ АДМИНОВ ====================
 
@@ -78,84 +78,40 @@ async function loadAdminsFromDB() {
     }
 }
 
-// ==================== ОТСЛЕЖИВАНИЕ ЗАКАЗОВ (onSnapshot) ====================
-
-async function watchOrders() {
-    console.log('👀 Отслеживание заказов запущено (onSnapshot)...');
-    
-    const q = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(10));
-    
-    onSnapshot(q, (snapshot) => {
-        console.log(`📊 Изменение в orders. Документов: ${snapshot.size}`);
-        
-        snapshot.docChanges().forEach((change) => {
-            if (change.type === 'added') {
-                const order = change.doc.data();
-                console.log(`🆕 Новый заказ (onSnapshot): ${order.productName}`);
-                
-                let date = 'только что';
-                if (order.date) {
-                    try {
-                        date = new Date(order.date).toLocaleString('ru-RU');
-                    } catch (e) {}
-                }
-                
-                const message = `
-🛍 НОВЫЙ ЗАКАЗ!
-
-👤 Клиент: ${order.username ? '@' + order.username : 'Не указан'}
-🆔 ID: ${order.userId || '—'}
-
-📱 Товар: ${order.productName}
-💾 Память: ${order.storage || '—'}
-🎨 Цвет: ${order.color || '—'}
-💰 Сумма: ${(order.price || 0).toLocaleString()} ₽
-
-📅 Время: ${date}
-                `.trim();
-                
-                if (GROUP_CHAT_ID) {
-                    bot.telegram.sendMessage(GROUP_CHAT_ID, message)
-                        .catch(err => console.error('❌ Ошибка группы:', err.message));
-                }
-                
-                for (const adminId of ADMIN_IDS) {
-                    bot.telegram.sendMessage(adminId, message)
-                        .catch(err => console.error(`❌ Ошибка админу ${adminId}:`, err.message));
-                }
-            }
-        });
-    }, (error) => {
-        console.error('❌ Ошибка onSnapshot:', error);
-    });
-}
-
 // ==================== ПЕРИОДИЧЕСКАЯ ПРОВЕРКА ЗАКАЗОВ ====================
 
 async function checkNewOrders() {
     try {
+        console.log('🔍 Проверка новых заказов...');
+        
         const q = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(5));
         const snapshot = await getDocs(q);
         
-        if (!snapshot.empty) {
-            const latestOrder = snapshot.docs[0];
-            const latestOrderId = latestOrder.id;
-            const order = latestOrder.data();
+        if (snapshot.empty) {
+            console.log('📭 Заказов нет');
+            return;
+        }
+        
+        const latestOrder = snapshot.docs[0];
+        const latestOrderId = latestOrder.id;
+        const order = latestOrder.data();
+        
+        console.log(`📦 Последний заказ: ID=${latestOrderId}, товар=${order.productName}`);
+        
+        // Если это новый заказ (не отправляли раньше)
+        if (lastSentOrderId !== latestOrderId) {
+            lastSentOrderId = latestOrderId;
             
-            // Если это новый заказ
-            if (lastOrderId !== latestOrderId) {
-                lastOrderId = latestOrderId;
-                
-                console.log(`🆕 Обнаружен новый заказ (периодическая проверка): ${order.productName}`);
-                
-                let date = 'только что';
-                if (order.date) {
-                    try {
-                        date = new Date(order.date).toLocaleString('ru-RU');
-                    } catch (e) {}
-                }
-                
-                const message = `
+            console.log(`🆕 НОВЫЙ ЗАКАЗ! Отправляем уведомление...`);
+            
+            let date = 'только что';
+            if (order.date) {
+                try {
+                    date = new Date(order.date).toLocaleString('ru-RU');
+                } catch (e) {}
+            }
+            
+            const message = `
 🛍 НОВЫЙ ЗАКАЗ!
 
 👤 Клиент: ${order.username ? '@' + order.username : 'Не указан'}
@@ -167,23 +123,24 @@ async function checkNewOrders() {
 💰 Сумма: ${(order.price || 0).toLocaleString()} ₽
 
 📅 Время: ${date}
-                `.trim();
-                
-                // Отправляем в группу
-                if (GROUP_CHAT_ID) {
-                    await bot.telegram.sendMessage(GROUP_CHAT_ID, message)
-                        .catch(err => console.error('❌ Ошибка группы:', err.message));
-                }
-                
-                // Отправляем админам
-                for (const adminId of ADMIN_IDS) {
-                    await bot.telegram.sendMessage(adminId, message)
-                        .catch(err => console.error(`❌ Ошибка админу ${adminId}:`, err.message));
-                }
+            `.trim();
+            
+            // Отправляем в группу
+            if (GROUP_CHAT_ID) {
+                await bot.telegram.sendMessage(GROUP_CHAT_ID, message)
+                    .then(() => console.log('✅ Отправлено в группу'))
+                    .catch(err => console.error('❌ Ошибка группы:', err.message));
+            }
+            
+            // Отправляем админам
+            for (const adminId of ADMIN_IDS) {
+                await bot.telegram.sendMessage(adminId, message)
+                    .then(() => console.log(`✅ Отправлено админу ${adminId}`))
+                    .catch(err => console.error(`❌ Ошибка админу ${adminId}:`, err.message));
             }
         }
     } catch (error) {
-        console.error('❌ Ошибка периодической проверки заказов:', error);
+        console.error('❌ Ошибка проверки заказов:', error);
     }
 }
 
@@ -219,6 +176,7 @@ bot.command('help', async (ctx) => {
 /removeadmin <id> - удалить администратора
 /checkorders - проверить заказы в базе
 /testorder - отправить тестовое уведомление
+/forcecheck - принудительно проверить и отправить уведомление
 
 📝 Как добавить товар:
 1. /addproduct
@@ -368,7 +326,7 @@ bot.command('testorder', async (ctx) => {
     await ctx.reply('✅ Тестовое уведомление отправлено');
 });
 
-// Команда /forcecheck - принудительная проверка и отправка
+// Команда /forcecheck
 bot.command('forcecheck', async (ctx) => {
     const userId = ctx.from.id.toString();
     if (!ADMIN_IDS.includes(userId)) {
@@ -385,15 +343,12 @@ bot.command('forcecheck', async (ctx) => {
         }
         
         let result = '📊 Последние заказы:\n\n';
-        
         snapshot.forEach((doc, index) => {
             const order = doc.data();
             result += `${index + 1}. ${order.productName} - ${order.username || 'аноним'}\n`;
         });
-        
         await ctx.reply(result);
         
-        // Отправляем последний заказ вручную
         const latestOrder = snapshot.docs[0];
         const order = latestOrder.data();
         
@@ -517,13 +472,9 @@ async function startBot() {
         await bot.launch();
         console.log('✅ Бот запущен');
         
-        // Запускаем оба способа отслеживания заказов
-        watchOrders();
-        console.log('✅ onSnapshot отслеживание запущено');
-        
-        // Запускаем периодическую проверку каждые 10 секунд
-        setInterval(checkNewOrders, 10000);
-        console.log('✅ Периодическая проверка запущена (каждые 10 секунд)');
+        // Запускаем периодическую проверку каждые 5 секунд
+        setInterval(checkNewOrders, 5000);
+        console.log('✅ Периодическая проверка запущена (каждые 5 секунд)');
         
     } catch (error) {
         console.error('❌ Ошибка запуска бота:', error);
