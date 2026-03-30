@@ -44,9 +44,6 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 const bot = new Telegraf(BOT_TOKEN);
 const sessions = new Map();
 
-// Храним ID последнего отправленного заказа
-let lastSentOrderId = null;
-
 // ==================== ФУНКЦИИ АДМИНОВ ====================
 
 async function saveAdminsToDB(admins) {
@@ -78,58 +75,6 @@ async function loadAdminsFromDB() {
     }
 }
 
-// ==================== ПРОВЕРКА ЗАКАЗОВ (КАЖДЫЕ 10 СЕКУНД) ====================
-
-async function checkOrders() {
-    try {
-        const q = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(5));
-        const snapshot = await getDocs(q);
-        
-        if (snapshot.empty) {
-            return;
-        }
-        
-        const latestOrder = snapshot.docs[0];
-        const orderId = latestOrder.id;
-        const order = latestOrder.data();
-        
-        // Если это новый заказ
-        if (lastSentOrderId !== orderId) {
-            lastSentOrderId = orderId;
-            
-            console.log(`🆕 НОВЫЙ ЗАКАЗ: ${order.productName} от ${order.username}`);
-            
-            const message = `
-🛍 НОВЫЙ ЗАКАЗ!
-
-👤 Клиент: ${order.username ? '@' + order.username : 'Не указан'}
-🆔 ID: ${order.userId || '—'}
-
-📱 Товар: ${order.productName}
-💾 Память: ${order.storage || '—'}
-🎨 Цвет: ${order.color || '—'}
-💰 Сумма: ${(order.price || 0).toLocaleString()} ₽
-
-📅 Время: ${new Date().toLocaleString('ru-RU')}
-            `.trim();
-            
-            // Отправляем в группу
-            if (GROUP_CHAT_ID) {
-                await bot.telegram.sendMessage(GROUP_CHAT_ID, message);
-                console.log('✅ Отправлено в группу');
-            }
-            
-            // Отправляем админам
-            for (const adminId of ADMIN_IDS) {
-                await bot.telegram.sendMessage(adminId, message);
-                console.log(`✅ Отправлено админу ${adminId}`);
-            }
-        }
-    } catch (error) {
-        console.error('❌ Ошибка проверки заказов:', error);
-    }
-}
-
 // ==================== КОМАНДЫ ====================
 
 bot.start(async (ctx) => {
@@ -155,6 +100,7 @@ bot.command('help', async (ctx) => {
 
 👑 Административные команды:
 /addproduct - добавить товар
+/addcategory - добавить категорию
 /admin - список админов
 /addadmin <id> - добавить админа
 /removeadmin <id> - удалить админа
@@ -162,27 +108,193 @@ bot.command('help', async (ctx) => {
 
 📝 Как добавить товар:
 1. /addproduct
-2. Введите название
-3. Введите описание
-4. Введите память
-5. Введите цвет
-6. Введите цену
-7. Отправьте фото
+2. Выберите категорию
+3. Введите название
+4. Введите описание
+5. Введите память (128GB, 256GB) или "нет"
+6. Введите цвет или "нет"
+7. Введите цену
+8. Отправьте фото
 
-🔔 Уведомления приходят автоматически каждые 10 секунд`;
+📁 Как добавить категорию:
+1. /addcategory
+2. Введите название категории (iPhone, iPad, MacBook и т.д.)
+
+🔔 Уведомления приходят автоматически (каждые 5 секунд)`;
     }
     
     await ctx.reply(helpText);
 });
 
+// ==================== УПРАВЛЕНИЕ КАТЕГОРИЯМИ ====================
+
+// Команда /addcategory
+bot.command('addcategory', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) {
+        return ctx.reply('❌ Нет доступа');
+    }
+    
+    sessions.set(userId, { step: 'new_category' });
+    await ctx.reply('📁 Введите название категории (например: iPhone, iPad, MacBook, AirPods, Аксессуары):');
+});
+
+// ==================== ДОБАВЛЕНИЕ ТОВАРОВ ====================
+
+// Команда /addproduct
 bot.command('addproduct', async (ctx) => {
     const userId = ctx.from.id.toString();
     if (!ADMIN_IDS.includes(userId)) {
         return ctx.reply('❌ Нет доступа');
     }
-    sessions.set(userId, { step: 'name' });
-    await ctx.reply('📱 Название модели:');
+    
+    // Загружаем категории
+    const categoriesSnapshot = await getDocs(collection(db, 'categories'));
+    const categories = [];
+    categoriesSnapshot.forEach(doc => {
+        categories.push({ id: doc.id, name: doc.data().name });
+    });
+    
+    if (categories.length === 0) {
+        return ctx.reply('❌ Сначала добавьте категории через /addcategory');
+    }
+    
+    sessions.set(userId, { step: 'category', categories: categories });
+    
+    const keyboard = categories.map(cat => [{ text: cat.name, callback_data: `cat_${cat.id}` }]);
+    
+    await ctx.reply('📁 Выберите категорию:', {
+        reply_markup: {
+            inline_keyboard: keyboard
+        }
+    });
 });
+
+// Обработка нажатия на категорию
+bot.on('callback_query', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    const session = sessions.get(userId);
+    
+    if (!session) return;
+    
+    const data = ctx.callbackQuery.data;
+    
+    if (data.startsWith('cat_')) {
+        const categoryId = data.replace('cat_', '');
+        const category = session.categories.find(c => c.id === categoryId);
+        
+        session.categoryId = categoryId;
+        session.categoryName = category.name;
+        session.step = 'model';
+        
+        await ctx.answerCbQuery();
+        await ctx.reply(`📱 Введите название модели (например: iPhone 17 Pro):`);
+    }
+});
+
+// Обработка текста
+bot.on('text', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    const session = sessions.get(userId);
+    
+    if (!session) return;
+    
+    const message = ctx.message.text;
+    
+    // Добавление категории
+    if (session.step === 'new_category') {
+        const categoryName = message;
+        const categoryId = categoryName.toLowerCase().replace(/\s/g, '_');
+        
+        try {
+            await addDoc(collection(db, 'categories'), {
+                id: categoryId,
+                name: categoryName,
+                order: 999
+            });
+            await ctx.reply(`✅ Категория "${categoryName}" добавлена!`);
+        } catch (error) {
+            await ctx.reply('❌ Ошибка при добавлении категории');
+        }
+        
+        sessions.delete(userId);
+        return;
+    }
+    
+    // Добавление товара
+    if (session.step === 'model') {
+        session.model = message;
+        session.step = 'description';
+        await ctx.reply('📝 Введите описание:');
+    }
+    else if (session.step === 'description') {
+        session.description = message;
+        session.step = 'storage';
+        await ctx.reply('💾 Введите память (128GB, 256GB) или напишите "нет":');
+    }
+    else if (session.step === 'storage') {
+        session.storage = message.toLowerCase() === 'нет' ? '—' : message;
+        session.step = 'color';
+        await ctx.reply('🎨 Введите цвет или напишите "нет":');
+    }
+    else if (session.step === 'color') {
+        session.color = message.toLowerCase() === 'нет' ? '—' : message;
+        session.step = 'price';
+        await ctx.reply('💰 Введите цену (число):');
+    }
+    else if (session.step === 'price') {
+        const price = parseInt(message);
+        if (isNaN(price)) {
+            return ctx.reply('❌ Введите число!');
+        }
+        session.price = price;
+        session.step = 'image';
+        await ctx.reply('📸 Отправьте фото товара:');
+    }
+});
+
+// Обработка фото
+bot.on('photo', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    const session = sessions.get(userId);
+    
+    if (!session || session.step !== 'image') return;
+    
+    try {
+        const photo = ctx.message.photo[ctx.message.photo.length - 1];
+        const fileLink = await ctx.telegram.getFileLink(photo.file_id);
+        
+        // Создаем продукт
+        await addDoc(collection(db, 'products'), {
+            categoryId: session.categoryId,
+            name: session.model,
+            description: session.description,
+            storage: session.storage,
+            color: session.color,
+            price: session.price,
+            image: fileLink.href,
+            createdAt: new Date().toISOString()
+        });
+        
+        await ctx.reply(
+            `✅ Товар добавлен!\n\n` +
+            `📁 Категория: ${session.categoryName}\n` +
+            `📱 Модель: ${session.model}\n` +
+            `📝 Описание: ${session.description}\n` +
+            `💾 Память: ${session.storage}\n` +
+            `🎨 Цвет: ${session.color}\n` +
+            `💰 Цена: ${session.price.toLocaleString()} ₽`
+        );
+        
+        sessions.delete(userId);
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка, попробуйте снова');
+        sessions.delete(userId);
+    }
+});
+
+// ==================== ОСТАЛЬНЫЕ КОМАНДЫ ====================
 
 bot.command('admin', async (ctx) => {
     const userId = ctx.from.id.toString();
@@ -260,71 +372,6 @@ bot.command('checkorders', async (ctx) => {
     }
 });
 
-// ==================== ДОБАВЛЕНИЕ ТОВАРОВ ====================
-
-bot.on('text', async (ctx) => {
-    const userId = ctx.from.id.toString();
-    const session = sessions.get(userId);
-    if (!session) return;
-    
-    const message = ctx.message.text;
-    
-    if (session.step === 'name') {
-        session.name = message;
-        session.step = 'description';
-        await ctx.reply('📝 Описание:');
-    }
-    else if (session.step === 'description') {
-        session.description = message;
-        session.step = 'storage';
-        await ctx.reply('💾 Память:');
-    }
-    else if (session.step === 'storage') {
-        session.storage = message;
-        session.step = 'color';
-        await ctx.reply('🎨 Цвет:');
-    }
-    else if (session.step === 'color') {
-        session.color = message;
-        session.step = 'price';
-        await ctx.reply('💰 Цена (число):');
-    }
-    else if (session.step === 'price') {
-        const price = parseInt(message);
-        if (isNaN(price)) return ctx.reply('❌ Введите число!');
-        session.price = price;
-        session.step = 'image';
-        await ctx.reply('📸 Отправьте фото:');
-    }
-});
-
-bot.on('photo', async (ctx) => {
-    const userId = ctx.from.id.toString();
-    const session = sessions.get(userId);
-    if (!session || session.step !== 'image') return;
-    
-    try {
-        const photo = ctx.message.photo[ctx.message.photo.length - 1];
-        const fileLink = await ctx.telegram.getFileLink(photo.file_id);
-        
-        await addDoc(collection(db, 'products'), {
-            name: session.name,
-            description: session.description,
-            storage: session.storage,
-            color: session.color,
-            price: session.price,
-            image: fileLink.href,
-            createdAt: new Date().toISOString()
-        });
-        
-        await ctx.reply(`✅ Товар добавлен!\n${session.name} - ${session.price.toLocaleString()} ₽`);
-        sessions.delete(userId);
-    } catch (error) {
-        await ctx.reply('❌ Ошибка, попробуйте снова');
-        sessions.delete(userId);
-    }
-});
-
 // ==================== ЗАПУСК ====================
 
 async function startBot() {
@@ -333,12 +380,8 @@ async function startBot() {
         await bot.launch();
         console.log('✅ Бот запущен');
         
-        // Запускаем проверку заказов каждые 10 секунд
-        setInterval(checkOrders, 10000);
-        console.log('✅ Проверка заказов запущена (каждые 10 секунд)');
-        
         setTimeout(async () => {
-            await bot.telegram.sendMessage("7441684316", "✅ Бот перезапущен. Проверка заказов каждые 10 секунд.");
+            await bot.telegram.sendMessage("7441684316", "✅ Бот перезапущен. Категории и товары готовы к добавлению!");
         }, 3000);
     } catch (error) {
         console.error('❌ Ошибка:', error);
@@ -351,10 +394,12 @@ process.once('SIGINT', () => {
     bot.stop('SIGINT');
     server.close();
 });
+
 process.once('SIGTERM', () => {
     bot.stop('SIGTERM');
     server.close();
 });
+
 process.on('unhandledRejection', (error) => {
     console.error('❌ Ошибка:', error.message);
 });
