@@ -210,12 +210,10 @@ bot.on('text', async (ctx) => {
         const selected = message.trim();
         let selectedCategory = null;
         
-        // Проверяем по номеру
         const num = parseInt(selected);
         if (!isNaN(num) && num >= 1 && num <= session.categories.length) {
             selectedCategory = session.categories[num - 1];
         } else {
-            // Проверяем по названию
             selectedCategory = session.categories.find(c => 
                 c.name.toLowerCase() === selected.toLowerCase()
             );
@@ -389,29 +387,31 @@ bot.command('checkorders', async (ctx) => {
 async function startBot() {
     try {
         await loadAdminsFromDB();
+        
+        // Удаляем вебхук
+        await bot.telegram.deleteWebhook();
+        console.log('✅ Вебхук удален');
+        
+        // Запускаем бота
         await bot.launch();
         console.log('✅ Бот запущен');
         
-        setTimeout(async () => {
-            await bot.telegram.sendMessage("7441684316", "✅ Бот перезапущен. Категории и товары готовы к добавлению!");
-        }, 3000);
     } catch (error) {
-        console.error('❌ Ошибка:', error);
+        console.error('❌ Ошибка запуска:', error.message);
     }
 }
 
 startBot();
 
+// Обработка остановки
 process.once('SIGINT', () => {
     bot.stop('SIGINT');
     server.close();
+    console.log('🛑 Бот остановлен');
 });
 
 process.once('SIGTERM', () => {
     bot.stop('SIGTERM');
     server.close();
-});
-
-process.on('unhandledRejection', (error) => {
-    console.error('❌ Ошибка:', error.message);
+    console.log('🛑 Бот остановлен');
 });
