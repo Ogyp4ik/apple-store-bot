@@ -108,8 +108,8 @@ bot.command('help', async (ctx) => {
 
 📝 Как добавить товар:
 1. /addproduct
-2. Выберите категорию
-3. Введите название
+2. Введите номер или название категории
+3. Введите название модели
 4. Введите описание
 5. Введите память или "нет"
 6. Введите цвет или "нет"
@@ -160,51 +160,17 @@ bot.command('addproduct', async (ctx) => {
         
         sessions.set(userId, { step: 'category', categories: categories });
         
-        const keyboard = {
-            inline_keyboard: categories.map(cat => [
-                { text: cat.name, callback_data: `cat_${cat.id}` }
-            ])
-        };
-        
-        await ctx.reply('📁 Выберите категорию:', {
-            reply_markup: keyboard
+        let categoryList = '📁 Доступные категории:\n\n';
+        categories.forEach((cat, index) => {
+            categoryList += `${index + 1}. ${cat.name}\n`;
         });
+        categoryList += '\nВведите номер категории или название:';
+        
+        await ctx.reply(categoryList);
         
     } catch (error) {
         console.error('Ошибка:', error);
         await ctx.reply('❌ Ошибка загрузки категорий');
-    }
-});
-
-// ==================== ОБРАБОТКА ВЫБОРА КАТЕГОРИИ ====================
-
-bot.on('callback_query', async (ctx) => {
-    const userId = ctx.from.id.toString();
-    const session = sessions.get(userId);
-    
-    // Если нет сессии или сессия не для добавления товара — игнорируем
-    if (!session || session.step !== 'category') {
-        await ctx.answerCbQuery('⚠️ Эта кнопка неактивна. Начните с /addproduct');
-        return;
-    }
-    
-    const data = ctx.callbackQuery.data;
-    
-    if (data.startsWith('cat_')) {
-        const categoryId = data.replace('cat_', '');
-        const category = session.categories.find(c => c.id === categoryId);
-        
-        if (!category) {
-            await ctx.answerCbQuery('❌ Категория не найдена');
-            return;
-        }
-        
-        session.categoryId = categoryId;
-        session.categoryName = category.name;
-        session.step = 'model';
-        
-        await ctx.answerCbQuery(`✅ Выбрано: ${category.name}`);
-        await ctx.reply(`📱 Введите название модели (например: iPhone 17 Pro):`);
     }
 });
 
@@ -236,6 +202,34 @@ bot.on('text', async (ctx) => {
         }
         
         sessions.delete(userId);
+        return;
+    }
+    
+    // Выбор категории для товара
+    if (session.step === 'category') {
+        const selected = message.trim();
+        let selectedCategory = null;
+        
+        // Проверяем по номеру
+        const num = parseInt(selected);
+        if (!isNaN(num) && num >= 1 && num <= session.categories.length) {
+            selectedCategory = session.categories[num - 1];
+        } else {
+            // Проверяем по названию
+            selectedCategory = session.categories.find(c => 
+                c.name.toLowerCase() === selected.toLowerCase()
+            );
+        }
+        
+        if (!selectedCategory) {
+            return ctx.reply('❌ Категория не найдена. Попробуйте снова /addproduct');
+        }
+        
+        session.categoryId = selectedCategory.id;
+        session.categoryName = selectedCategory.name;
+        session.step = 'model';
+        
+        await ctx.reply(`✅ Выбрано: ${selectedCategory.name}\n\n📱 Введите название модели (например: iPhone 17 Pro):`);
         return;
     }
     
