@@ -42,9 +42,22 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 });
 
 const bot = new Telegraf(BOT_TOKEN);
-
-// Хранилище для временных данных
 const tempData = new Map();
+
+// ==================== ФУНКЦИЯ ОТПРАВКИ УВЕДОМЛЕНИЙ (ТОЛЬКО В ГРУППУ) ====================
+
+async function sendTelegramNotification(message) {
+    try {
+        if (GROUP_CHAT_ID) {
+            await bot.telegram.sendMessage(GROUP_CHAT_ID, message);
+            console.log('✅ Уведомление отправлено в группу');
+        } else {
+            console.log('⚠️ GROUP_CHAT_ID не задан');
+        }
+    } catch (error) {
+        console.error('❌ Ошибка отправки в группу:', error.message);
+    }
+}
 
 // ==================== ФУНКЦИИ АДМИНОВ ====================
 
@@ -127,7 +140,7 @@ bot.command('help', async (ctx) => {
 /order 1 - детали заказа #1
 /removeorder 1 - удалить заказ #1
 
-🔔 Уведомления приходят автоматически`;
+🔔 Уведомления приходят только в группу`;
     }
     
     await ctx.reply(helpText);
@@ -539,12 +552,7 @@ bot.command('testorder', async (ctx) => {
             .catch(err => console.error('❌ Ошибка группы:', err.message));
     }
     
-    for (const adminId of ADMIN_IDS) {
-        await bot.telegram.sendMessage(adminId, testMessage)
-            .catch(err => console.error('❌ Ошибка админу:', err.message));
-    }
-    
-    await ctx.reply('✅ Тестовое уведомление отправлено');
+    await ctx.reply('✅ Тестовое уведомление отправлено в группу');
 });
 
 // ==================== ОБРАБОТКА СООБЩЕНИЙ ====================
@@ -753,7 +761,7 @@ async function startBot() {
         console.log('✅ Бот запущен');
         
         setTimeout(async () => {
-            await bot.telegram.sendMessage("7441684316", "✅ Бот запущен! Все команды работают.\n\nДоступные команды:\n/addcategory - добавить категорию\n/addcategoryphoto - добавить фото категории\n/addproduct - добавить товар\n/admin - список админов\n/addadmin /removeadmin - управление админами\n/checkorders - статистика заказов\n/orders - список всех заказов\n/order НОМЕР - детали заказа\n/removeorder НОМЕР - удалить заказ\n/testorder - тестовое уведомление");
+            await bot.telegram.sendMessage("7441684316", "✅ Бот запущен! Все команды работают.\n\nДоступные команды:\n/addcategory - добавить категорию\n/addcategoryphoto - добавить фото категории\n/addproduct - добавить товар\n/admin - список админов\n/addadmin /removeadmin - управление админами\n/checkorders - статистика заказов\n/orders - список всех заказов\n/order НОМЕР - детали заказа\n/removeorder НОМЕР - удалить заказ\n/testorder - тестовое уведомление\n\n🔔 Уведомления приходят только в группу");
         }, 3000);
         
     } catch (error) {
