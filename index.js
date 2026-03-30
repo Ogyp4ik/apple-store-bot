@@ -111,16 +111,16 @@ bot.command('help', async (ctx) => {
 2. Выберите категорию
 3. Введите название
 4. Введите описание
-5. Введите память (128GB, 256GB) или "нет"
+5. Введите память или "нет"
 6. Введите цвет или "нет"
 7. Введите цену
 8. Отправьте фото
 
 📁 Как добавить категорию:
 1. /addcategory
-2. Введите название категории (iPhone, iPad, MacBook и т.д.)
+2. Введите название категории
 
-🔔 Уведомления приходят автоматически (каждые 5 секунд)`;
+🔔 Уведомления приходят автоматически`;
     }
     
     await ctx.reply(helpText);
@@ -128,7 +128,6 @@ bot.command('help', async (ctx) => {
 
 // ==================== УПРАВЛЕНИЕ КАТЕГОРИЯМИ ====================
 
-// Команда /addcategory
 bot.command('addcategory', async (ctx) => {
     const userId = ctx.from.id.toString();
     if (!ADMIN_IDS.includes(userId)) {
@@ -136,46 +135,55 @@ bot.command('addcategory', async (ctx) => {
     }
     
     sessions.set(userId, { step: 'new_category' });
-    await ctx.reply('📁 Введите название категории (например: iPhone, iPad, MacBook, AirPods, Аксессуары):');
+    await ctx.reply('📁 Введите название категории (например: iPhone, iPad, MacBook, AirPods):');
 });
 
 // ==================== ДОБАВЛЕНИЕ ТОВАРОВ ====================
 
-// Команда /addproduct
 bot.command('addproduct', async (ctx) => {
     const userId = ctx.from.id.toString();
     if (!ADMIN_IDS.includes(userId)) {
         return ctx.reply('❌ Нет доступа');
     }
     
-    // Загружаем категории
-    const categoriesSnapshot = await getDocs(collection(db, 'categories'));
-    const categories = [];
-    categoriesSnapshot.forEach(doc => {
-        categories.push({ id: doc.id, name: doc.data().name });
-    });
-    
-    if (categories.length === 0) {
-        return ctx.reply('❌ Сначала добавьте категории через /addcategory');
-    }
-    
-    sessions.set(userId, { step: 'category', categories: categories });
-    
-    const keyboard = categories.map(cat => [{ text: cat.name, callback_data: `cat_${cat.id}` }]);
-    
-    await ctx.reply('📁 Выберите категорию:', {
-        reply_markup: {
-            inline_keyboard: keyboard
+    try {
+        const categoriesSnapshot = await getDocs(collection(db, 'categories'));
+        const categories = [];
+        categoriesSnapshot.forEach(doc => {
+            const data = doc.data();
+            categories.push({ id: doc.id, name: data.name });
+        });
+        
+        if (categories.length === 0) {
+            return ctx.reply('❌ Сначала добавьте категории через /addcategory');
         }
-    });
+        
+        sessions.set(userId, { step: 'category', categories: categories });
+        
+        const keyboard = categories.map(cat => [{ text: cat.name, callback_data: `cat_${cat.id}` }]);
+        
+        await ctx.reply('📁 Выберите категорию:', {
+            reply_markup: {
+                inline_keyboard: keyboard
+            }
+        });
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка загрузки категорий');
+    }
 });
 
-// Обработка нажатия на категорию
+// ==================== ОБРАБОТКА ВЫБОРА КАТЕГОРИИ ====================
+
 bot.on('callback_query', async (ctx) => {
     const userId = ctx.from.id.toString();
     const session = sessions.get(userId);
     
-    if (!session) return;
+    if (!session) {
+        await ctx.answerCbQuery('❌ Сессия не найдена, начните заново /addproduct');
+        return;
+    }
     
     const data = ctx.callbackQuery.data;
     
@@ -183,16 +191,22 @@ bot.on('callback_query', async (ctx) => {
         const categoryId = data.replace('cat_', '');
         const category = session.categories.find(c => c.id === categoryId);
         
+        if (!category) {
+            await ctx.answerCbQuery('❌ Категория не найдена');
+            return;
+        }
+        
         session.categoryId = categoryId;
         session.categoryName = category.name;
         session.step = 'model';
         
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery(`✅ Выбрано: ${category.name}`);
         await ctx.reply(`📱 Введите название модели (например: iPhone 17 Pro):`);
     }
 });
 
-// Обработка текста
+// ==================== ОБРАБОТКА ТЕКСТА ====================
+
 bot.on('text', async (ctx) => {
     const userId = ctx.from.id.toString();
     const session = sessions.get(userId);
@@ -214,6 +228,7 @@ bot.on('text', async (ctx) => {
             });
             await ctx.reply(`✅ Категория "${categoryName}" добавлена!`);
         } catch (error) {
+            console.error('Ошибка:', error);
             await ctx.reply('❌ Ошибка при добавлении категории');
         }
         
@@ -225,12 +240,12 @@ bot.on('text', async (ctx) => {
     if (session.step === 'model') {
         session.model = message;
         session.step = 'description';
-        await ctx.reply('📝 Введите описание:');
+        await ctx.reply('📝 Введите описание товара:');
     }
     else if (session.step === 'description') {
         session.description = message;
         session.step = 'storage';
-        await ctx.reply('💾 Введите память (128GB, 256GB) или напишите "нет":');
+        await ctx.reply('💾 Введите память (например: 128GB, 256GB) или напишите "нет":');
     }
     else if (session.step === 'storage') {
         session.storage = message.toLowerCase() === 'нет' ? '—' : message;
@@ -240,7 +255,7 @@ bot.on('text', async (ctx) => {
     else if (session.step === 'color') {
         session.color = message.toLowerCase() === 'нет' ? '—' : message;
         session.step = 'price';
-        await ctx.reply('💰 Введите цену (число):');
+        await ctx.reply('💰 Введите цену (только число):');
     }
     else if (session.step === 'price') {
         const price = parseInt(message);
@@ -253,7 +268,8 @@ bot.on('text', async (ctx) => {
     }
 });
 
-// Обработка фото
+// ==================== ОБРАБОТКА ФОТО ====================
+
 bot.on('photo', async (ctx) => {
     const userId = ctx.from.id.toString();
     const session = sessions.get(userId);
@@ -264,7 +280,6 @@ bot.on('photo', async (ctx) => {
         const photo = ctx.message.photo[ctx.message.photo.length - 1];
         const fileLink = await ctx.telegram.getFileLink(photo.file_id);
         
-        // Создаем продукт
         await addDoc(collection(db, 'products'), {
             categoryId: session.categoryId,
             name: session.model,
