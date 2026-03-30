@@ -1,7 +1,7 @@
 const express = require('express');
 const { Telegraf } = require('telegraf');
 const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc } = require('firebase/firestore');
+const { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
 
 // ==================== КОНФИГУРАЦИЯ ====================
 
@@ -43,7 +43,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// Хранилище для временных данных (категории и товары)
+// Хранилище для временных данных
 const tempData = new Map();
 
 // ==================== ФУНКЦИИ АДМИНОВ ====================
@@ -103,6 +103,7 @@ bot.command('help', async (ctx) => {
 👑 Административные команды:
 /addproduct - добавить товар
 /addcategory - добавить категорию
+/addcategoryphoto - добавить фото для категории
 /admin - список админов
 /addadmin <id> - добавить админа
 /removeadmin <id> - удалить админа
@@ -112,6 +113,11 @@ bot.command('help', async (ctx) => {
 📝 Как добавить товар:
 1. /addcategory - сначала создайте категорию
 2. /addproduct - выберите категорию и добавьте товар
+
+📸 Как добавить фото категории:
+1. /addcategoryphoto
+2. Выберите категорию
+3. Отправьте фото
 
 🔔 Уведомления приходят автоматически`;
     }
@@ -129,6 +135,40 @@ bot.command('addcategory', async (ctx) => {
     
     tempData.set(userId, { step: 'category_name' });
     await ctx.reply('📁 Введите название категории (например: iPhone, iPad, MacBook, AirPods):');
+});
+
+// Добавление фото для категории
+bot.command('addcategoryphoto', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) {
+        return ctx.reply('❌ Нет доступа');
+    }
+    
+    try {
+        const categoriesSnapshot = await getDocs(collection(db, 'categories'));
+        const categories = [];
+        categoriesSnapshot.forEach(doc => {
+            categories.push({ id: doc.id, name: doc.data().name });
+        });
+        
+        if (categories.length === 0) {
+            return ctx.reply('❌ Сначала добавьте категории через /addcategory');
+        }
+        
+        tempData.set(userId, { step: 'select_category_for_photo', categories: categories });
+        
+        let categoryList = '📁 Выберите категорию для добавления фото:\n\n';
+        categories.forEach((cat, index) => {
+            categoryList += `${index + 1}. ${cat.name}\n`;
+        });
+        categoryList += '\nВведите номер категории:';
+        
+        await ctx.reply(categoryList);
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка загрузки категорий');
+    }
 });
 
 // ==================== ДОБАВЛЕНИЕ ТОВАРОВ ====================
@@ -151,7 +191,6 @@ bot.command('addproduct', async (ctx) => {
             return ctx.reply('❌ Сначала добавьте категории через /addcategory');
         }
         
-        // Сохраняем список категорий
         tempData.set(userId, { step: 'select_category', categories: categories });
         
         let categoryList = '📁 Доступные категории:\n\n';
@@ -312,15 +351,35 @@ bot.on('text', async (ctx) => {
             await addDoc(collection(db, 'categories'), {
                 id: categoryId,
                 name: categoryName,
-                order: 999
+                order: 999,
+                image: null
             });
-            await ctx.reply(`✅ Категория "${categoryName}" добавлена!`);
+            await ctx.reply(`✅ Категория "${categoryName}" добавлена!\n\nТеперь можете добавить фото через /addcategoryphoto`);
         } catch (error) {
             console.error('Ошибка:', error);
             await ctx.reply('❌ Ошибка при добавлении категории');
         }
         
         tempData.delete(userId);
+        return;
+    }
+    
+    // Выбор категории для фото
+    if (data.step === 'select_category_for_photo') {
+        const num = parseInt(message);
+        if (isNaN(num) || num < 1 || num > data.categories.length) {
+            return ctx.reply(`❌ Введите номер от 1 до ${data.categories.length}`);
+        }
+        
+        const selectedCategory = data.categories[num - 1];
+        
+        tempData.set(userId, {
+            step: 'category_photo',
+            categoryId: selectedCategory.id,
+            categoryName: selectedCategory.name
+        });
+        
+        await ctx.reply(`✅ Выбрано: ${selectedCategory.name}\n\n📸 Отправьте фото для этой категории:`);
         return;
     }
     
@@ -409,34 +468,51 @@ bot.on('photo', async (ctx) => {
     const userId = ctx.from.id.toString();
     const data = tempData.get(userId);
     
-    if (!data || data.step !== 'product_image') return;
+    if (!data) return;
     
     try {
         const photo = ctx.message.photo[ctx.message.photo.length - 1];
         const fileLink = await ctx.telegram.getFileLink(photo.file_id);
+        const imageUrl = fileLink.href;
         
-        await addDoc(collection(db, 'products'), {
-            categoryId: data.categoryId,
-            name: data.productName,
-            description: data.productDescription,
-            storage: data.productStorage,
-            color: data.productColor,
-            price: data.productPrice,
-            image: fileLink.href,
-            createdAt: new Date().toISOString()
-        });
+        // Добавление фото для категории
+        if (data.step === 'category_photo') {
+            const categoryRef = doc(db, 'categories', data.categoryId);
+            await updateDoc(categoryRef, {
+                image: imageUrl
+            });
+            
+            await ctx.reply(`✅ Фото добавлено для категории "${data.categoryName}"!`);
+            tempData.delete(userId);
+            return;
+        }
         
-        await ctx.reply(
-            `✅ Товар добавлен!\n\n` +
-            `📁 Категория: ${data.categoryName}\n` +
-            `📱 Модель: ${data.productName}\n` +
-            `📝 Описание: ${data.productDescription}\n` +
-            `💾 Память: ${data.productStorage}\n` +
-            `🎨 Цвет: ${data.productColor}\n` +
-            `💰 Цена: ${data.productPrice.toLocaleString()} ₽`
-        );
+        // Добавление товара
+        if (data.step === 'product_image') {
+            await addDoc(collection(db, 'products'), {
+                categoryId: data.categoryId,
+                name: data.productName,
+                description: data.productDescription,
+                storage: data.productStorage,
+                color: data.productColor,
+                price: data.productPrice,
+                image: imageUrl,
+                createdAt: new Date().toISOString()
+            });
+            
+            await ctx.reply(
+                `✅ Товар добавлен!\n\n` +
+                `📁 Категория: ${data.categoryName}\n` +
+                `📱 Модель: ${data.productName}\n` +
+                `📝 Описание: ${data.productDescription}\n` +
+                `💾 Память: ${data.productStorage}\n` +
+                `🎨 Цвет: ${data.productColor}\n` +
+                `💰 Цена: ${data.productPrice.toLocaleString()} ₽`
+            );
+            
+            tempData.delete(userId);
+        }
         
-        tempData.delete(userId);
     } catch (error) {
         console.error('Ошибка:', error);
         await ctx.reply('❌ Ошибка, попробуйте снова');
@@ -457,7 +533,7 @@ async function startBot() {
         console.log('✅ Бот запущен');
         
         setTimeout(async () => {
-            await bot.telegram.sendMessage("7441684316", "✅ Бот запущен! Все команды работают.");
+            await bot.telegram.sendMessage("7441684316", "✅ Бот запущен! Все команды работают.\n\nДоступные команды:\n/addcategory - добавить категорию\n/addcategoryphoto - добавить фото категории\n/addproduct - добавить товар\n/admin - список админов\n/addadmin /removeadmin - управление админами\n/checkorders - статистика заказов\n/testorder - тестовое уведомление");
         }, 3000);
         
     } catch (error) {
