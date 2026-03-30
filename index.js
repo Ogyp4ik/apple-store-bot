@@ -160,7 +160,6 @@ bot.command('addproduct', async (ctx) => {
         
         sessions.set(userId, { step: 'category', categories: categories });
         
-        // ПРАВИЛЬНЫЙ ФОРМАТ КЛАВИАТУРЫ
         const keyboard = {
             inline_keyboard: categories.map(cat => [
                 { text: cat.name, callback_data: `cat_${cat.id}` }
@@ -183,8 +182,9 @@ bot.on('callback_query', async (ctx) => {
     const userId = ctx.from.id.toString();
     const session = sessions.get(userId);
     
-    if (!session) {
-        await ctx.answerCbQuery('❌ Сессия не найдена, начните заново /addproduct');
+    // Если нет сессии или сессия не для добавления товара — игнорируем
+    if (!session || session.step !== 'category') {
+        await ctx.answerCbQuery('⚠️ Эта кнопка неактивна. Начните с /addproduct');
         return;
     }
     
