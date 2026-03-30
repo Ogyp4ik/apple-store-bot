@@ -160,12 +160,15 @@ bot.command('addproduct', async (ctx) => {
         
         sessions.set(userId, { step: 'category', categories: categories });
         
-        const keyboard = categories.map(cat => [{ text: cat.name, callback_data: `cat_${cat.id}` }]);
+        // ПРАВИЛЬНЫЙ ФОРМАТ КЛАВИАТУРЫ
+        const keyboard = {
+            inline_keyboard: categories.map(cat => [
+                { text: cat.name, callback_data: `cat_${cat.id}` }
+            ])
+        };
         
         await ctx.reply('📁 Выберите категорию:', {
-            reply_markup: {
-                inline_keyboard: keyboard
-            }
+            reply_markup: keyboard
         });
         
     } catch (error) {
