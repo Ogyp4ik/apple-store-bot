@@ -109,8 +109,8 @@ bot.command('help', async (ctx) => {
 /removeadmin <id> - удалить админа
 /checkorders - статистика заказов
 /orders - список всех заказов
-/order <номер> - детали заказа
-/removeorder <номер> - удалить заказ
+/order НОМЕР - детали заказа
+/removeorder НОМЕР - удалить заказ
 /testorder - тестовое уведомление
 
 📝 Как добавить товар:
@@ -238,23 +238,23 @@ bot.command('orders', async (ctx) => {
         
         orders.sort((a, b) => new Date(b.date) - new Date(a.date));
         
-        let message = '📋 <b>СПИСОК ЗАКАЗОВ</b>\n\n';
+        let message = '📋 СПИСОК ЗАКАЗОВ\n\n';
         
         orders.forEach((order, index) => {
             const orderNumber = index + 1;
             const date = order.date ? new Date(order.date).toLocaleString('ru-RU') : '—';
-            message += `<b>${orderNumber}.</b> ${order.productName}\n`;
+            message += `${orderNumber}. ${order.productName}\n`;
             message += `   👤 ${order.username || 'Не указан'}\n`;
             message += `   💰 ${order.price?.toLocaleString() || 0} ₽\n`;
             message += `   📅 ${date}\n`;
-            message += `   🆔 <code>${order.id.substring(0, 8)}...</code>\n\n`;
+            message += `   🆔 ${order.id.substring(0, 8)}...\n\n`;
         });
         
         message += `\n📊 Всего: ${orders.length} заказов\n`;
-        message += `💡 Для просмотра деталей: /order <номер>\n`;
-        message += `💡 Для удаления: /removeorder <номер>`;
+        message += `💡 Для просмотра деталей: /order НОМЕР\n`;
+        message += `💡 Для удаления: /removeorder НОМЕР`;
         
-        await ctx.reply(message, { parse_mode: 'HTML' });
+        await ctx.reply(message);
         
     } catch (error) {
         console.error('Ошибка:', error);
@@ -271,7 +271,7 @@ bot.command('order', async (ctx) => {
     
     const args = ctx.message.text.split(' ');
     if (args.length < 2) {
-        return ctx.reply('⚠️ Использование: /order <номер>\n\nПример: /order 1');
+        return ctx.reply('⚠️ Использование: /order НОМЕР\n\nПример: /order 1');
     }
     
     const orderNumber = parseInt(args[1]);
@@ -300,25 +300,25 @@ bot.command('order', async (ctx) => {
         const date = order.date ? new Date(order.date).toLocaleString('ru-RU') : '—';
         
         const message = `
-📦 <b>ЗАКАЗ #${orderNumber}</b>
+📦 ЗАКАЗ #${orderNumber}
 
-🆔 <b>ID заказа:</b> <code>${order.id}</code>
-👤 <b>Клиент:</b> ${order.username ? '@' + order.username : 'Не указан'}
-🆔 <b>User ID:</b> <code>${order.userId || '—'}</code>
-📝 <b>Имя:</b> ${order.firstName || '—'} ${order.lastName || ''}
+🆔 ID заказа: ${order.id}
+👤 Клиент: ${order.username ? '@' + order.username : 'Не указан'}
+🆔 User ID: ${order.userId || '—'}
+📝 Имя: ${order.firstName || '—'} ${order.lastName || ''}
 
-📱 <b>Товар:</b> ${order.productName}
-💾 <b>Память:</b> ${order.storage || '—'}
-🎨 <b>Цвет:</b> ${order.color || '—'}
-💰 <b>Сумма:</b> ${(order.price || 0).toLocaleString()} ₽
+📱 Товар: ${order.productName}
+💾 Память: ${order.storage || '—'}
+🎨 Цвет: ${order.color || '—'}
+💰 Сумма: ${(order.price || 0).toLocaleString()} ₽
 
-📅 <b>Дата:</b> ${date}
-📌 <b>Тип:</b> ${order.type === 'custom' ? 'Заказ под заказ' : 'Обычный заказ'}
+📅 Дата: ${date}
+📌 Тип: ${order.type === 'custom' ? 'Заказ под заказ' : 'Обычный заказ'}
 
 💡 Для удаления: /removeorder ${orderNumber}
         `.trim();
         
-        await ctx.reply(message, { parse_mode: 'HTML' });
+        await ctx.reply(message);
         
     } catch (error) {
         console.error('Ошибка:', error);
@@ -335,7 +335,7 @@ bot.command('removeorder', async (ctx) => {
     
     const args = ctx.message.text.split(' ');
     if (args.length < 2) {
-        return ctx.reply('⚠️ Использование: /removeorder <номер>\n\nПример: /removeorder 1');
+        return ctx.reply('⚠️ Использование: /removeorder НОМЕР\n\nПример: /removeorder 1');
     }
     
     const orderNumber = parseInt(args[1]);
@@ -364,14 +364,13 @@ bot.command('removeorder', async (ctx) => {
         const orderId = order.id;
         
         await ctx.reply(
-            `⚠️ <b>Подтверждение удаления</b>\n\n` +
+            `⚠️ ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ\n\n` +
             `Вы действительно хотите удалить заказ #${orderNumber}?\n` +
             `Товар: ${order.productName}\n` +
             `Клиент: ${order.username || 'Не указан'}\n` +
             `Сумма: ${(order.price || 0).toLocaleString()} ₽\n\n` +
             `Для подтверждения отправьте: /confirm_${orderId}\n` +
-            `Для отмены: /cancel`,
-            { parse_mode: 'HTML' }
+            `Для отмены: /cancel`
         );
         
         tempData.set(userId, { 
@@ -754,7 +753,7 @@ async function startBot() {
         console.log('✅ Бот запущен');
         
         setTimeout(async () => {
-            await bot.telegram.sendMessage("7441684316", "✅ Бот запущен! Все команды работают.\n\nДоступные команды:\n/addcategory - добавить категорию\n/addcategoryphoto - добавить фото категории\n/addproduct - добавить товар\n/admin - список админов\n/addadmin /removeadmin - управление админами\n/checkorders - статистика заказов\n/orders - список всех заказов\n/order <номер> - детали заказа\n/removeorder <номер> - удалить заказ\n/testorder - тестовое уведомление");
+            await bot.telegram.sendMessage("7441684316", "✅ Бот запущен! Все команды работают.\n\nДоступные команды:\n/addcategory - добавить категорию\n/addcategoryphoto - добавить фото категории\n/addproduct - добавить товар\n/admin - список админов\n/addadmin /removeadmin - управление админами\n/checkorders - статистика заказов\n/orders - список всех заказов\n/order НОМЕР - детали заказа\n/removeorder НОМЕР - удалить заказ\n/testorder - тестовое уведомление");
         }, 3000);
         
     } catch (error) {
