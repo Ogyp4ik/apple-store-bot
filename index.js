@@ -1,7 +1,7 @@
 const express = require('express');
 const { Telegraf } = require('telegraf');
 const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
+const { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc } = require('firebase/firestore');
 
 // ==================== КОНФИГУРАЦИЯ ====================
 
@@ -107,7 +107,10 @@ bot.command('help', async (ctx) => {
 /admin - список админов
 /addadmin <id> - добавить админа
 /removeadmin <id> - удалить админа
-/checkorders - проверить заказы
+/checkorders - статистика заказов
+/orders - список всех заказов
+/order <номер> - детали заказа
+/removeorder <номер> - удалить заказ
 /testorder - тестовое уведомление
 
 📝 Как добавить товар:
@@ -118,6 +121,11 @@ bot.command('help', async (ctx) => {
 1. /addcategoryphoto
 2. Выберите категорию
 3. Отправьте фото
+
+📦 Управление заказами:
+/orders - список заказов
+/order 1 - детали заказа #1
+/removeorder 1 - удалить заказ #1
 
 🔔 Уведомления приходят автоматически`;
     }
@@ -205,6 +213,214 @@ bot.command('addproduct', async (ctx) => {
         console.error('Ошибка:', error);
         await ctx.reply('❌ Ошибка загрузки категорий');
     }
+});
+
+// ==================== УПРАВЛЕНИЕ ЗАКАЗАМИ ====================
+
+// Команда /orders - показать все заказы
+bot.command('orders', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) {
+        return ctx.reply('❌ Нет доступа');
+    }
+    
+    try {
+        const snapshot = await getDocs(collection(db, 'orders'));
+        const orders = [];
+        snapshot.forEach(doc => {
+            orders.push({ id: doc.id, ...doc.data() });
+        });
+        
+        if (orders.length === 0) {
+            await ctx.reply('📭 Заказов нет');
+            return;
+        }
+        
+        orders.sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        let message = '📋 <b>СПИСОК ЗАКАЗОВ</b>\n\n';
+        
+        orders.forEach((order, index) => {
+            const orderNumber = index + 1;
+            const date = order.date ? new Date(order.date).toLocaleString('ru-RU') : '—';
+            message += `<b>${orderNumber}.</b> ${order.productName}\n`;
+            message += `   👤 ${order.username || 'Не указан'}\n`;
+            message += `   💰 ${order.price?.toLocaleString() || 0} ₽\n`;
+            message += `   📅 ${date}\n`;
+            message += `   🆔 <code>${order.id.substring(0, 8)}...</code>\n\n`;
+        });
+        
+        message += `\n📊 Всего: ${orders.length} заказов\n`;
+        message += `💡 Для просмотра деталей: /order <номер>\n`;
+        message += `💡 Для удаления: /removeorder <номер>`;
+        
+        await ctx.reply(message, { parse_mode: 'HTML' });
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка при загрузке заказов');
+    }
+});
+
+// Команда /order <номер> - показать детали заказа
+bot.command('order', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) {
+        return ctx.reply('❌ Нет доступа');
+    }
+    
+    const args = ctx.message.text.split(' ');
+    if (args.length < 2) {
+        return ctx.reply('⚠️ Использование: /order <номер>\n\nПример: /order 1');
+    }
+    
+    const orderNumber = parseInt(args[1]);
+    if (isNaN(orderNumber) || orderNumber < 1) {
+        return ctx.reply('❌ Введите корректный номер');
+    }
+    
+    try {
+        const snapshot = await getDocs(collection(db, 'orders'));
+        const orders = [];
+        snapshot.forEach(doc => {
+            orders.push({ id: doc.id, ...doc.data() });
+        });
+        
+        if (orders.length === 0) {
+            return ctx.reply('📭 Заказов нет');
+        }
+        
+        orders.sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        if (orderNumber > orders.length) {
+            return ctx.reply(`❌ Заказа с номером ${orderNumber} не существует. Всего заказов: ${orders.length}`);
+        }
+        
+        const order = orders[orderNumber - 1];
+        const date = order.date ? new Date(order.date).toLocaleString('ru-RU') : '—';
+        
+        const message = `
+📦 <b>ЗАКАЗ #${orderNumber}</b>
+
+🆔 <b>ID заказа:</b> <code>${order.id}</code>
+👤 <b>Клиент:</b> ${order.username ? '@' + order.username : 'Не указан'}
+🆔 <b>User ID:</b> <code>${order.userId || '—'}</code>
+📝 <b>Имя:</b> ${order.firstName || '—'} ${order.lastName || ''}
+
+📱 <b>Товар:</b> ${order.productName}
+💾 <b>Память:</b> ${order.storage || '—'}
+🎨 <b>Цвет:</b> ${order.color || '—'}
+💰 <b>Сумма:</b> ${(order.price || 0).toLocaleString()} ₽
+
+📅 <b>Дата:</b> ${date}
+📌 <b>Тип:</b> ${order.type === 'custom' ? 'Заказ под заказ' : 'Обычный заказ'}
+
+💡 Для удаления: /removeorder ${orderNumber}
+        `.trim();
+        
+        await ctx.reply(message, { parse_mode: 'HTML' });
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка при загрузке заказа');
+    }
+});
+
+// Команда /removeorder <номер> - удалить заказ
+bot.command('removeorder', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) {
+        return ctx.reply('❌ Нет доступа');
+    }
+    
+    const args = ctx.message.text.split(' ');
+    if (args.length < 2) {
+        return ctx.reply('⚠️ Использование: /removeorder <номер>\n\nПример: /removeorder 1');
+    }
+    
+    const orderNumber = parseInt(args[1]);
+    if (isNaN(orderNumber) || orderNumber < 1) {
+        return ctx.reply('❌ Введите корректный номер');
+    }
+    
+    try {
+        const snapshot = await getDocs(collection(db, 'orders'));
+        const orders = [];
+        snapshot.forEach(doc => {
+            orders.push({ id: doc.id, ...doc.data() });
+        });
+        
+        if (orders.length === 0) {
+            return ctx.reply('📭 Заказов нет');
+        }
+        
+        orders.sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        if (orderNumber > orders.length) {
+            return ctx.reply(`❌ Заказа с номером ${orderNumber} не существует. Всего заказов: ${orders.length}`);
+        }
+        
+        const order = orders[orderNumber - 1];
+        const orderId = order.id;
+        
+        await ctx.reply(
+            `⚠️ <b>Подтверждение удаления</b>\n\n` +
+            `Вы действительно хотите удалить заказ #${orderNumber}?\n` +
+            `Товар: ${order.productName}\n` +
+            `Клиент: ${order.username || 'Не указан'}\n` +
+            `Сумма: ${(order.price || 0).toLocaleString()} ₽\n\n` +
+            `Для подтверждения отправьте: /confirm_${orderId}\n` +
+            `Для отмены: /cancel`,
+            { parse_mode: 'HTML' }
+        );
+        
+        tempData.set(userId, { 
+            step: 'confirm_delete', 
+            orderId: orderId,
+            orderNumber: orderNumber
+        });
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка при удалении заказа');
+    }
+});
+
+// Подтверждение удаления
+bot.hears(/^\/confirm_(.+)$/, async (ctx) => {
+    const userId = ctx.from.id.toString();
+    const data = tempData.get(userId);
+    
+    if (!data || data.step !== 'confirm_delete') {
+        return ctx.reply('❌ Нет активного подтверждения удаления');
+    }
+    
+    const orderId = ctx.match[1];
+    if (data.orderId !== orderId) {
+        return ctx.reply('❌ Неверный ID заказа');
+    }
+    
+    try {
+        await deleteDoc(doc(db, 'orders', orderId));
+        await ctx.reply(`✅ Заказ #${data.orderNumber} успешно удален!`);
+        tempData.delete(userId);
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка при удалении заказа');
+    }
+});
+
+// Команда /cancel - отмена удаления
+bot.command('cancel', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    const data = tempData.get(userId);
+    
+    if (!data || data.step !== 'confirm_delete') {
+        return ctx.reply('❌ Нет активного подтверждения удаления');
+    }
+    
+    await ctx.reply(`❌ Удаление заказа #${data.orderNumber} отменено`);
+    tempData.delete(userId);
 });
 
 // ==================== АДМИНСКИЕ КОМАНДЫ ====================
@@ -335,6 +551,11 @@ bot.command('testorder', async (ctx) => {
 // ==================== ОБРАБОТКА СООБЩЕНИЙ ====================
 
 bot.on('text', async (ctx) => {
+    // Пропускаем команды
+    if (ctx.message.text.startsWith('/')) {
+        return;
+    }
+    
     const userId = ctx.from.id.toString();
     const data = tempData.get(userId);
     
@@ -533,7 +754,7 @@ async function startBot() {
         console.log('✅ Бот запущен');
         
         setTimeout(async () => {
-            await bot.telegram.sendMessage("7441684316", "✅ Бот запущен! Все команды работают.\n\nДоступные команды:\n/addcategory - добавить категорию\n/addcategoryphoto - добавить фото категории\n/addproduct - добавить товар\n/admin - список админов\n/addadmin /removeadmin - управление админами\n/checkorders - статистика заказов\n/testorder - тестовое уведомление");
+            await bot.telegram.sendMessage("7441684316", "✅ Бот запущен! Все команды работают.\n\nДоступные команды:\n/addcategory - добавить категорию\n/addcategoryphoto - добавить фото категории\n/addproduct - добавить товар\n/admin - список админов\n/addadmin /removeadmin - управление админами\n/checkorders - статистика заказов\n/orders - список всех заказов\n/order <номер> - детали заказа\n/removeorder <номер> - удалить заказ\n/testorder - тестовое уведомление");
         }, 3000);
         
     } catch (error) {
