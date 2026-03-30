@@ -105,6 +105,7 @@ bot.command('help', async (ctx) => {
 /addadmin <id> - добавить админа
 /removeadmin <id> - удалить админа
 /checkorders - проверить заказы
+/testorder - тестовое уведомление
 
 📝 Как добавить товар:
 1. /addproduct
@@ -177,6 +178,11 @@ bot.command('addproduct', async (ctx) => {
 // ==================== ОБРАБОТКА ТЕКСТА ====================
 
 bot.on('text', async (ctx) => {
+    // Пропускаем команды (начинаются с /)
+    if (ctx.message.text.startsWith('/')) {
+        return;
+    }
+    
     const userId = ctx.from.id.toString();
     const session = sessions.get(userId);
     
@@ -304,7 +310,7 @@ bot.on('photo', async (ctx) => {
     }
 });
 
-// ==================== ОСТАЛЬНЫЕ КОМАНДЫ ====================
+// ==================== АДМИНСКИЕ КОМАНДЫ ====================
 
 bot.command('admin', async (ctx) => {
     const userId = ctx.from.id.toString();
@@ -382,17 +388,48 @@ bot.command('checkorders', async (ctx) => {
     }
 });
 
+bot.command('testorder', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) {
+        return ctx.reply('❌ Нет доступа');
+    }
+    
+    const testMessage = `
+🛍 ТЕСТОВОЕ УВЕДОМЛЕНИЕ
+
+👤 Тестовый клиент
+🆔 ID: 123456789
+
+📱 Товар: iPhone 17 (тест)
+💾 Память: 256GB
+🎨 Цвет: Black
+💰 Сумма: 99 900 ₽
+
+📅 Время: ${new Date().toLocaleString('ru-RU')}
+    `.trim();
+    
+    if (GROUP_CHAT_ID) {
+        await bot.telegram.sendMessage(GROUP_CHAT_ID, testMessage)
+            .catch(err => console.error('❌ Ошибка группы:', err.message));
+    }
+    
+    for (const adminId of ADMIN_IDS) {
+        await bot.telegram.sendMessage(adminId, testMessage)
+            .catch(err => console.error('❌ Ошибка админу:', err.message));
+    }
+    
+    await ctx.reply('✅ Тестовое уведомление отправлено');
+});
+
 // ==================== ЗАПУСК ====================
 
 async function startBot() {
     try {
         await loadAdminsFromDB();
         
-        // Удаляем вебхук
         await bot.telegram.deleteWebhook();
         console.log('✅ Вебхук удален');
         
-        // Запускаем бота
         await bot.launch();
         console.log('✅ Бот запущен');
         
@@ -403,15 +440,12 @@ async function startBot() {
 
 startBot();
 
-// Обработка остановки
 process.once('SIGINT', () => {
     bot.stop('SIGINT');
     server.close();
-    console.log('🛑 Бот остановлен');
 });
 
 process.once('SIGTERM', () => {
     bot.stop('SIGTERM');
     server.close();
-    console.log('🛑 Бот остановлен');
 });
