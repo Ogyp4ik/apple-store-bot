@@ -47,13 +47,14 @@ const tempData = new Map();
 // ==================== ФУНКЦИЯ ОТПРАВКИ УВЕДОМЛЕНИЙ (ТОЛЬКО В ГРУППУ) ====================
 
 async function sendTelegramNotification(message) {
+    if (!GROUP_CHAT_ID) {
+        console.log('⚠️ GROUP_CHAT_ID не задан');
+        return;
+    }
+    
     try {
-        if (GROUP_CHAT_ID) {
-            await bot.telegram.sendMessage(GROUP_CHAT_ID, message);
-            console.log('✅ Уведомление отправлено в группу');
-        } else {
-            console.log('⚠️ GROUP_CHAT_ID не задан');
-        }
+        await bot.telegram.sendMessage(GROUP_CHAT_ID, message);
+        console.log('✅ Уведомление отправлено в группу');
     } catch (error) {
         console.error('❌ Ошибка отправки в группу:', error.message);
     }
