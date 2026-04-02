@@ -91,6 +91,39 @@ async function loadAdminsFromDB() {
     }
 }
 
+// ==================== ОТПРАВКА ЗАКАЗОВ (ИЗ MINI APP) ====================
+
+// Функция отправки заказа (вызывается из Mini App)
+async function sendOrderFromApp(orderData, tg) {
+    try {
+        await db.collection('orders').add(orderData);
+        
+        const message = `
+🛍 НОВЫЙ ЗАКАЗ!
+
+👤 Клиент: ${orderData.username ? '@' + orderData.username : 'Не указан'}
+🆔 ID: ${orderData.userId || '—'}
+
+📱 Товар: ${orderData.productName}
+💾 Память: ${orderData.storage}
+🎨 Цвет: ${orderData.color}
+💰 Сумма: ${orderData.price.toLocaleString()} ₽
+
+📅 Время: ${new Date().toLocaleString('ru-RU')}
+        `.trim();
+        
+        // Отправляем только в группу
+        await sendTelegramNotification(message);
+        
+        if (tg) tg.showAlert('✅ Заявка отправлена!');
+        
+    } catch (error) {
+        console.error('❌ Ошибка:', error);
+        if (tg) tg.showAlert('❌ Ошибка при отправке');
+        throw error;
+    }
+}
+
 // ==================== КОМАНДЫ ====================
 
 bot.start(async (ctx) => {
