@@ -1,412 +1,9 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="color-scheme" content="light dark">
-    <title>Яблочный</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
-    <style>
-/* ============================================================
-   Яблочный — Telegram Mini App — Premium Design v4
-   CSS встроен прямо в HTML — никакой проблемы с подключением
-   ============================================================ */
+const express = require('express');
+const { Telegraf } = require('telegraf');
+const { initializeApp } = require('firebase/app');
+const { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc } = require('firebase/firestore');
 
-:root {
-    --font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif;
-    --accent: #007aff;
-    --accent-dark: #0055cc;
-    --green: #34c759;
-
-    --bg: #f2f2f7;
-    --bg-card: #ffffff;
-    --bg-secondary: #f2f2f7;
-    --text: #1d1d1f;
-    --text-sub: #6c6c70;
-    --text-hint: #aeaeb2;
-    --sep: rgba(60,60,67,0.12);
-    --img-bg: #e8e8ed;
-
-    --shadow: 0 2px 8px rgba(0,0,0,0.07), 0 6px 20px rgba(0,0,0,0.05);
-    --shadow-btn: 0 4px 20px rgba(0,122,255,0.4);
-    --shadow-modal: 0 -4px 40px rgba(0,0,0,0.12);
-
-    --r-md: 18px;
-    --r-lg: 22px;
-    --r-pill: 100px;
-
-    --ease: 0.18s cubic-bezier(0.25,0.46,0.45,0.94);
-    --spring: 0.3s cubic-bezier(0.34,1.4,0.64,1);
-}
-
-@media (prefers-color-scheme: dark) {
-    :root {
-        --bg: #000;
-        --bg-card: #1c1c1e;
-        --bg-secondary: #2c2c2e;
-        --text: #fff;
-        --text-sub: #8e8e93;
-        --text-hint: #48484a;
-        --sep: rgba(255,255,255,0.1);
-        --img-bg: #2c2c2e;
-        --shadow: 0 2px 8px rgba(0,0,0,0.45), 0 6px 20px rgba(0,0,0,0.35);
-        --shadow-btn: 0 4px 20px rgba(0,122,255,0.48);
-        --shadow-modal: 0 -4px 40px rgba(0,0,0,0.55);
-    }
-}
-
-*,*::before,*::after { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-html { -webkit-text-size-adjust:100%; }
-
-body {
-    font-family: var(--font);
-    background: var(--tg-theme-bg-color, var(--bg));
-    color: var(--tg-theme-text-color, var(--text));
-    min-height: 100vh;
-    padding-bottom: 100px;
-    -webkit-font-smoothing: antialiased;
-    overflow-x: hidden;
-}
-
-img { display:block; }
-button { font-family:var(--font); cursor:pointer; border:none; outline:none; -webkit-appearance:none; background:none; }
-textarea { font-family:var(--font); -webkit-appearance:none; }
-
-/* ---- App container ---- */
-#app {
-    max-width: 600px;
-    margin: 0 auto;
-    padding: 20px 16px 16px;
-}
-
-/* ---- Spinner (initial) ---- */
-.loading-spinner {
-    width: 32px; height: 32px;
-    border: 2.5px solid var(--sep);
-    border-top-color: var(--tg-theme-button-color, var(--accent));
-    border-radius: 50%;
-    animation: spin .7s linear infinite;
-    margin: 120px auto;
-}
-
-/* ---- Loading state (text) ---- */
-.loading {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 14px;
-    padding: 90px 20px;
-    color: var(--tg-theme-hint-color, var(--text-sub));
-    font-size: 15px;
-    font-weight: 500;
-}
-.loading::before {
-    content:'';
-    width:30px; height:30px;
-    border:2.5px solid var(--sep);
-    border-top-color: var(--tg-theme-button-color, var(--accent));
-    border-radius:50%;
-    animation:spin .7s linear infinite;
-}
-
-@keyframes spin { to { transform:rotate(360deg); } }
-@keyframes fadeUp {
-    from { opacity:0; transform:translateY(14px); }
-    to   { opacity:1; transform:translateY(0); }
-}
-
-/* ---- Empty ---- */
-.empty {
-    text-align:center;
-    padding:80px 24px;
-    color: var(--tg-theme-hint-color, var(--text-sub));
-    font-size:15px;
-    line-height:1.6;
-}
-
-/* ---- Header ---- */
-.header { padding:6px 0 26px; }
-.header h1 {
-    font-size:34px;
-    font-weight:700;
-    letter-spacing:-0.8px;
-    line-height:1.1;
-    color: var(--tg-theme-text-color, var(--text));
-}
-.header h1 em {
-    font-style:normal;
-    background:linear-gradient(130deg,#007aff 0%,#5ac8fa 100%);
-    -webkit-background-clip:text;
-    background-clip:text;
-    -webkit-text-fill-color:transparent;
-}
-
-/* ---- Nav bar ---- */
-.nav-bar {
-    display:flex;
-    align-items:center;
-    gap:14px;
-    padding:6px 0 22px;
-}
-.back-btn {
-    width:36px; height:36px;
-    border-radius:50%;
-    background: var(--tg-theme-secondary-bg-color, var(--bg-card));
-    color: var(--tg-theme-button-color, var(--accent));
-    font-size:20px;
-    display:flex; align-items:center; justify-content:center;
-    box-shadow:var(--shadow);
-    flex-shrink:0;
-    transition:transform var(--ease), opacity var(--ease);
-    line-height:1;
-    cursor:pointer;
-}
-.back-btn:active { transform:scale(0.88); opacity:.7; }
-.nav-bar h2 {
-    font-size:20px;
-    font-weight:600;
-    letter-spacing:-0.3px;
-    color: var(--tg-theme-text-color, var(--text));
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-}
-
-/* ---- Categories grid ---- */
-.categories-grid {
-    display:grid;
-    grid-template-columns:repeat(2,1fr);
-    gap:14px;
-}
-.category-card {
-    background: var(--tg-theme-secondary-bg-color, var(--bg-card));
-    border-radius:var(--r-lg);
-    padding:22px 14px 18px;
-    text-align:center;
-    cursor:pointer;
-    box-shadow:var(--shadow);
-    border:1px solid var(--sep);
-    transition:transform var(--spring), box-shadow var(--ease);
-    user-select:none;
-    -webkit-user-select:none;
-    animation:fadeUp .4s cubic-bezier(.25,.46,.45,.94) both;
-}
-.category-card:nth-child(1){animation-delay:.03s}
-.category-card:nth-child(2){animation-delay:.08s}
-.category-card:nth-child(3){animation-delay:.13s}
-.category-card:nth-child(4){animation-delay:.18s}
-.category-card:nth-child(5){animation-delay:.23s}
-.category-card:nth-child(6){animation-delay:.28s}
-.category-card:nth-child(7){animation-delay:.33s}
-.category-card:nth-child(8){animation-delay:.38s}
-.category-card:active { transform:scale(0.95); box-shadow:0 1px 4px rgba(0,0,0,.06); }
-
-.category-image {
-    width:80px; height:80px;
-    margin:0 auto 14px;
-    border-radius:50%;
-    background:var(--img-bg);
-    display:flex; align-items:center; justify-content:center;
-    overflow:hidden;
-}
-.category-image img { width:100%; height:100%; object-fit:cover; }
-.category-card h3 {
-    font-size:15px;
-    font-weight:600;
-    letter-spacing:-.1px;
-    color: var(--tg-theme-text-color, var(--text));
-    line-height:1.35;
-}
-
-/* ---- Products list ---- */
-.products-list { display:flex; flex-direction:column; gap:16px; }
-.product-card {
-    background: var(--tg-theme-secondary-bg-color, var(--bg-card));
-    border-radius:var(--r-lg);
-    overflow:hidden;
-    box-shadow:var(--shadow);
-    border:1px solid var(--sep);
-    transition:transform var(--spring), box-shadow var(--ease);
-    user-select:none;
-    -webkit-user-select:none;
-    animation:fadeUp .4s cubic-bezier(.25,.46,.45,.94) both;
-}
-.product-card:nth-child(1){animation-delay:.04s}
-.product-card:nth-child(2){animation-delay:.10s}
-.product-card:nth-child(3){animation-delay:.16s}
-.product-card:nth-child(4){animation-delay:.22s}
-.product-card:nth-child(5){animation-delay:.28s}
-.product-card:active { transform:scale(0.985); box-shadow:0 1px 4px rgba(0,0,0,.06); }
-
-.product-image {
-    width:100%;
-    aspect-ratio:4/3;
-    background:var(--img-bg);
-    display:flex; align-items:center; justify-content:center;
-    overflow:hidden;
-}
-.product-image img { width:100%; height:100%; object-fit:contain; padding:12px; }
-
-.product-info { padding:18px 18px 20px; }
-.product-title {
-    font-size:17px; font-weight:600; letter-spacing:-.2px;
-    color: var(--tg-theme-text-color, var(--text));
-    margin-bottom:6px; line-height:1.35;
-}
-.product-price {
-    font-size:26px; font-weight:700; letter-spacing:-.6px;
-    color: var(--tg-theme-button-color, var(--accent));
-    margin-bottom:8px;
-}
-.product-specs {
-    font-size:13px;
-    color: var(--tg-theme-hint-color, var(--text-sub));
-    margin-bottom:18px; line-height:1.5;
-}
-
-/* ---- Buy button ---- */
-.buy-btn {
-    display:block; width:100%;
-    background: var(--tg-theme-button-color, var(--accent));
-    color: var(--tg-theme-button-text-color, #fff);
-    padding:14px 20px;
-    border-radius:var(--r-md);
-    font-size:16px; font-weight:600; letter-spacing:-.1px;
-    text-align:center; cursor:pointer;
-    transition:transform var(--spring), opacity var(--ease);
-    border:none;
-}
-.buy-btn:active { transform:scale(0.97); opacity:.85; }
-.buy-btn:disabled { opacity:.5; cursor:default; transform:none; }
-
-/* ---- Fixed bottom button ---- */
-.gradient-btn {
-    position:fixed;
-    bottom:calc(env(safe-area-inset-bottom,0px) + 18px);
-    left:50%; transform:translateX(-50%);
-    width:calc(100% - 32px); max-width:568px;
-    background:linear-gradient(135deg,#007aff 0%,#0055cc 100%);
-    color:#fff;
-    padding:16px 24px;
-    border-radius:var(--r-pill);
-    font-size:17px; font-weight:600; letter-spacing:-.2px;
-    text-align:center; cursor:pointer;
-    box-shadow:var(--shadow-btn);
-    z-index:100;
-    transition:transform var(--spring), box-shadow var(--ease), opacity var(--ease);
-    white-space:nowrap;
-    border:none;
-}
-.gradient-btn:active {
-    transform:translateX(-50%) scale(0.97);
-    box-shadow:0 2px 8px rgba(0,122,255,.2);
-    opacity:.9;
-}
-
-/* ---- Modal (bottom sheet) ---- */
-.modal {
-    position:fixed; inset:0;
-    background:rgba(0,0,0,.5);
-    backdrop-filter:blur(12px);
-    -webkit-backdrop-filter:blur(12px);
-    display:flex; align-items:flex-end; justify-content:center;
-    z-index:200;
-    visibility:hidden; opacity:0;
-    transition:opacity var(--ease), visibility var(--ease);
-}
-.modal.active { visibility:visible; opacity:1; }
-.modal.active .modal-content { transform:translateY(0); }
-
-.modal-content {
-    background: var(--tg-theme-bg-color, var(--bg-card));
-    border-radius:26px 26px 0 0;
-    padding:12px 20px calc(env(safe-area-inset-bottom,0px) + 28px);
-    width:100%; max-width:600px;
-    box-shadow:var(--shadow-modal);
-    transform:translateY(80px);
-    transition:transform var(--spring);
-}
-.modal-content::before {
-    content:'';
-    display:block;
-    width:36px; height:4px;
-    background:var(--sep);
-    border-radius:10px;
-    margin:0 auto 20px;
-}
-.modal-content h3 {
-    font-size:20px; font-weight:700; letter-spacing:-.3px;
-    color: var(--tg-theme-text-color, var(--text));
-    margin-bottom:16px;
-}
-.modal-content textarea {
-    width:100%;
-    padding:14px 16px;
-    border-radius:12px;
-    border:1.5px solid var(--sep);
-    background: var(--tg-theme-secondary-bg-color, var(--bg-secondary));
-    color: var(--tg-theme-text-color, var(--text));
-    font-size:15px; line-height:1.5;
-    resize:none; outline:none;
-    margin-bottom:14px;
-    transition:border-color var(--ease);
-    min-height:100px;
-}
-.modal-content textarea::placeholder { color:var(--text-hint); }
-.modal-content textarea:focus { border-color: var(--tg-theme-button-color, var(--accent)); }
-
-.modal-btn {
-    display:block; width:100%;
-    padding:15px 20px;
-    border-radius:var(--r-pill);
-    font-size:16px; font-weight:600; letter-spacing:-.1px;
-    text-align:center; cursor:pointer; border:none;
-    transition:transform var(--spring), opacity var(--ease);
-}
-.modal-btn:active { transform:scale(0.97); opacity:.85; }
-
-#submitCustomBtn {
-    background:linear-gradient(135deg,#007aff,#0055cc);
-    color:#fff;
-    box-shadow:0 4px 14px rgba(0,122,255,.3);
-    margin-bottom:10px;
-}
-.close-modal {
-    background: var(--tg-theme-secondary-bg-color, var(--bg-secondary));
-    color: var(--tg-theme-button-color, var(--accent));
-}
-
-/* scrollbar */
-::-webkit-scrollbar { width:4px; }
-::-webkit-scrollbar-track { background:transparent; }
-::-webkit-scrollbar-thumb { background:var(--sep); border-radius:4px; }
-    </style>
-</head>
-<body>
-
-    <div id="app">
-        <div class="loading-spinner"></div>
-    </div>
-
-    <button class="gradient-btn" id="customOrderBtn">Заказать под заказ</button>
-
-    <div id="customModal" class="modal">
-        <div class="modal-content">
-            <h3>Заказ под заказ</h3>
-            <textarea id="customComment" rows="4" placeholder="Напишите, что вы ищете..."></textarea>
-            <button id="submitCustomBtn" class="modal-btn">Отправить заявку</button>
-            <button id="closeModalBtn" class="modal-btn close-modal">Отмена</button>
-        </div>
-    </div>
-
-    <script>
-// ================================================================
-//  app.js — встроен в HTML, Firebase логика без изменений
-// ================================================================
-const tg = window.Telegram.WebApp;
-tg.expand();
+// ==================== КОНФИГУРАЦИЯ ====================
 
 const firebaseConfig = {
     apiKey: "AIzaSyCR01An-gdwysrsNfDoPGV0fQ9Zxmk1S4g",
@@ -416,233 +13,570 @@ const firebaseConfig = {
     messagingSenderId: "909418919751",
     appId: "1:909418919751:web:cc3975c0e62b5ae4703e62"
 };
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
 
-const TELEGRAM_TOKEN = "8754493631:AAH9vZvWTS-SOHwk5Y0y7Rbr6klwmgeSgN0";
-const GROUP_CHAT_ID = "-1003850642883";
+const BOT_TOKEN = "8754493631:AAH9vZvWTS-SOHwk5Y0y7Rbr6klwmgeSgN0";
+const MINI_APP_URL = "https://apple-store-web-production.up.railway.app";
 
-let user = null;
-try { if (tg.initDataUnsafe?.user) user = tg.initDataUnsafe.user; } catch(e) {}
+const ADMIN_IDS = [
+    "7441684316",
+    "1317122793",
+    "1015865721"
+];
 
-async function sendTelegramNotification(message) {
-    if (!GROUP_CHAT_ID) return;
+const GROUP_CHAT_ID = -1003850642883;
+
+// ==================== ИНИЦИАЛИЗАЦИЯ ====================
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+
+const app = express();
+app.use(express.json());
+const PORT = process.env.PORT || 10000;
+
+app.get('/', (req, res) => {
+    res.send('🍎 Apple Store Bot is running!');
+});
+
+// ==================== ВЕБХУК ДЛЯ MINI APP ====================
+app.post('/notify', async (req, res) => {
     try {
-        await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({chat_id:GROUP_CHAT_ID, text:message})
-        });
-    } catch(e) { console.error(e); }
-}
-
-async function sendOrder(product, btn) {
-    const orig = btn.textContent;
-    btn.textContent = 'Отправка...';
-    btn.disabled = true;
-    try {
-        const order = {
-            userId: user?.id || 0,
-            username: user?.username || 'Не указан',
-            productName: product.name,
-            storage: product.storage || '—',
-            color: product.color || '—',
-            price: product.price,
-            date: new Date().toISOString(),
-            type: 'product'
-        };
+        const order = req.body;
+        console.log('📦 Получен заказ из Mini App:', order.productName);
         await db.collection('orders').add(order);
-        await sendTelegramNotification(
-            `🛍 НОВЫЙ ЗАКАЗ!\n👤 ${order.username}\n📱 ${order.productName}\n💾 ${order.storage}\n🎨 ${order.color}\n💰 ${order.price.toLocaleString()} ₽`
-        );
-        tg.showAlert('✅ Заявка отправлена!');
-        btn.textContent = '✅ Отправлено!';
-        btn.style.background = '#34c759';
-        setTimeout(() => {
-            btn.textContent = orig;
-            btn.disabled = false;
-            btn.style.background = '';
-        }, 2000);
-    } catch(e) {
-        console.error(e);
-        tg.showAlert('❌ Ошибка');
-        btn.textContent = orig;
-        btn.disabled = false;
+        const message = `
+🛍 НОВЫЙ ЗАКАЗ!
+
+👤 Клиент: ${order.username ? '@' + order.username : 'Не указан'}
+🆔 ID: ${order.userId || '—'}
+
+📱 Товар: ${order.productName}
+💾 Память: ${order.storage}
+🎨 Цвет: ${order.color}
+💰 Сумма: ${order.price.toLocaleString()} ₽
+
+📅 Время: ${new Date().toLocaleString('ru-RU')}
+        `.trim();
+        if (GROUP_CHAT_ID) {
+            await bot.telegram.sendMessage(GROUP_CHAT_ID, message);
+            console.log('✅ Уведомление отправлено в группу');
+        }
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('❌ Ошибка:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ HTTP сервер запущен на порту ${PORT}`);
+});
+
+const bot = new Telegraf(BOT_TOKEN);
+const tempData = new Map();
+
+// ==================== ФУНКЦИИ АДМИНОВ ====================
+
+async function saveAdminsToDB(admins) {
+    try {
+        const adminsRef = doc(db, 'settings', 'admins');
+        await setDoc(adminsRef, { ids: admins, updatedAt: new Date().toISOString() });
+        console.log('✅ Список админов сохранен');
+    } catch (error) {
+        console.error('❌ Ошибка:', error);
     }
 }
 
-async function sendCustomOrder(comment) {
+async function loadAdminsFromDB() {
     try {
-        const order = {
-            userId: user?.id || 0,
-            username: user?.username || 'Не указан',
-            productName: 'Заказ под заказ',
-            storage: '—', color: '—', price: 0,
-            comment,
-            date: new Date().toISOString(),
-            type: 'custom'
-        };
-        await db.collection('orders').add(order);
-        await sendTelegramNotification(`📦 ЗАКАЗ ПОД ЗАКАЗ!\n👤 ${order.username}\n📝 ${comment}`);
-        tg.showAlert('✅ Заявка принята!');
-    } catch(e) { console.error(e); tg.showAlert('❌ Ошибка'); }
-}
-
-// ---- Pages ----
-
-async function showCategories() {
-    const app = document.getElementById('app');
-    app.innerHTML = '<div class="loading">Загрузка...</div>';
-    try {
-        const snap = await db.collection('categories').orderBy('order').get();
-        const cats = [];
-        snap.forEach(doc => {
-            console.log('📁 Категория:', doc.data().name, 'ID документа:', doc.id);
-            cats.push({ id: doc.id, ...doc.data() });
-        });
-
-        if (!cats.length) {
-            app.innerHTML = '<div class="empty">Категории пока не добавлены</div>';
-            return;
+        const adminsRef = doc(db, 'settings', 'admins');
+        const docSnap = await getDoc(adminsRef);
+        if (docSnap.exists()) {
+            const savedAdmins = docSnap.data().ids;
+            ADMIN_IDS.length = 0;
+            savedAdmins.forEach(id => ADMIN_IDS.push(id));
+            console.log(`✅ Загружено админов: ${ADMIN_IDS.length}`);
+        } else {
+            await saveAdminsToDB(ADMIN_IDS);
+            console.log(`✅ Создан список админов: ${ADMIN_IDS.length}`);
         }
-
-        app.innerHTML = `
-            <div class="header"><h1><em>Яблочный</em></h1></div>
-            <div class="categories-grid" id="grid"></div>
-        `;
-        const grid = document.getElementById('grid');
-        cats.forEach(cat => {
-            const el = document.createElement('div');
-            el.className = 'category-card';
-            el.innerHTML = `
-                <div class="category-image">
-                    <img src="${cat.image || 'https://placehold.co/200x200?text=?'}" alt="${cat.name}" loading="lazy">
-                </div>
-                <h3>${cat.name}</h3>
-            `;
-            el.onclick = () => showProducts(cat.id, cat.name);
-            grid.appendChild(el);
-        });
-    } catch(e) {
-        console.error(e);
-        document.getElementById('app').innerHTML = '<div class="empty">Ошибка загрузки</div>';
+    } catch (error) {
+        console.error('❌ Ошибка:', error);
     }
 }
 
-// ========== ДИАГНОСТИЧЕСКАЯ ФУНКЦИЯ showProducts ==========
-async function showProducts(categoryId, categoryName) {
-    const app = document.getElementById('app');
-    app.innerHTML = `
-        <div class="nav-bar">
-            <button class="back-btn" onclick="showCategories()">←</button>
-            <h2>${categoryName}</h2>
-        </div>
-        <div class="loading">Диагностика...</div>
-    `;
+// ==================== КОМАНДЫ БОТА ====================
+
+bot.start(async (ctx) => {
+    await ctx.reply(
+        '🍎 Добро пожаловать в магазин "Яблочный"!\n\n' +
+        'Используйте кнопку внизу экрана, чтобы открыть магазин.'
+    );
+});
+
+bot.command('help', async (ctx) => {
+    const isAdmin = ADMIN_IDS.includes(ctx.from.id.toString());
+    let helpText = `🍎 Яблочный магазин
+
+🛍 Для открытия магазина используйте кнопку внизу экрана.
+
+📋 Доступные команды:
+/start - показать приветствие
+/help - показать эту справку`;
+
+    if (isAdmin) {
+        helpText += `
+
+👑 Административные команды:
+/addproduct - добавить товар
+/addcategory - добавить категорию
+/addcategoryphoto - добавить фото для категории
+/admin - список админов
+/addadmin <id> - добавить админа
+/removeadmin <id> - удалить админа
+/checkorders - статистика заказов
+/orders - список всех заказов
+/order НОМЕР - детали заказа
+/removeorder НОМЕР - удалить заказ
+/testorder - тестовое уведомление
+
+📝 Как добавить товар:
+1. /addcategory - сначала создайте категорию
+2. /addproduct - выберите категорию и добавьте товар
+
+📸 Как добавить фото категории:
+1. /addcategoryphoto
+2. Выберите категорию
+3. Отправьте фото
+
+📦 Управление заказами:
+/orders - список заказов
+/order 1 - детали заказа #1
+/removeorder 1 - удалить заказ #1
+
+🔔 Уведомления приходят только в группу`;
+    }
+    await ctx.reply(helpText);
+});
+
+// ==================== УПРАВЛЕНИЕ КАТЕГОРИЯМИ ====================
+
+bot.command('addcategory', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) {
+        return ctx.reply('❌ Нет доступа');
+    }
+    tempData.set(userId, { step: 'category_name' });
+    await ctx.reply('📁 Введите название категории (например: iPhone, iPad, MacBook, AirPods):');
+});
+
+bot.command('addcategoryphoto', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) {
+        return ctx.reply('❌ Нет доступа');
+    }
     try {
-        console.log('🔍 1. categoryId (входной параметр):', categoryId);
-        
-        // Получаем документ категории
-        const catDoc = await db.collection('categories').doc(categoryId).get();
-        if (!catDoc.exists) {
-            console.error('❌ Категория с ID', categoryId, 'не найдена');
-            app.innerHTML = `<div class="empty">Ошибка: категория не найдена (ID: ${categoryId})</div>`;
-            return;
-        }
-        const catData = catDoc.data();
-        console.log('🏷 2. Данные категории:', catData);
-        
-        // Смотрим, какие товары есть в базе и какие у них categoryId
-        const allProducts = await db.collection('products').get();
-        console.log('📦 3. Все товары в базе:');
-        allProducts.forEach(doc => {
-            console.log('   -', doc.data().name, 'categoryId =', doc.data().categoryId, 'тип:', typeof doc.data().categoryId);
+        const categoriesSnapshot = await getDocs(collection(db, 'categories'));
+        const categories = [];
+        categoriesSnapshot.forEach(doc => {
+            categories.push({ id: doc.id, name: doc.data().name });
         });
-        
-        // Пробуем найти товары с нужным categoryId
-        const targetId = catData.id; // поле id из категории
-        console.log('🎯 4. Ищем товары с categoryId =', targetId);
-        
-        const snap = await db.collection('products').where('categoryId', '==', targetId).get();
-        console.log('✅ 5. Найдено товаров:', snap.size);
-        
-        const products = [];
-        snap.forEach(doc => products.push({ id: doc.id, ...doc.data() }));
-
-        if (!products.length) {
-            app.innerHTML = `
-                <div class="nav-bar">
-                    <button class="back-btn" onclick="showCategories()">←</button>
-                    <h2>${categoryName}</h2>
-                </div>
-                <div class="empty">В этой категории пока нет товаров (ищем по id: ${targetId})</div>
-            `;
-            return;
+        if (categories.length === 0) {
+            return ctx.reply('❌ Сначала добавьте категории через /addcategory');
         }
+        tempData.set(userId, { step: 'select_category_for_photo', categories: categories });
+        let categoryList = '📁 Выберите категорию для добавления фото:\n\n';
+        categories.forEach((cat, index) => {
+            categoryList += `${index + 1}. ${cat.name} (ID: ${cat.id})\n`;
+        });
+        categoryList += '\nВведите номер категории:';
+        await ctx.reply(categoryList);
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка загрузки категорий');
+    }
+});
 
-        // Если нашли — показываем
-        app.innerHTML = `
-            <div class="nav-bar">
-                <button class="back-btn" onclick="showCategories()">←</button>
-                <h2>${categoryName}</h2>
-            </div>
-            <div class="products-list" id="list"></div>
-        `;
-        const list = document.getElementById('list');
+// ==================== ДОБАВЛЕНИЕ ТОВАРОВ ====================
 
-        products.forEach(p => {
-            const specs = [
-                p.storage && p.storage !== '—' ? `Память: ${p.storage}` : '',
-                p.color   && p.color   !== '—' ? `Цвет: ${p.color}`   : ''
-            ].filter(Boolean).join(' · ');
-
-            const el = document.createElement('div');
-            el.className = 'product-card';
-            el.innerHTML = `
-                <div class="product-image">
-                    <img src="${p.image || 'https://placehold.co/400x300?text=No+Image'}" alt="${p.name}" loading="lazy">
-                </div>
-                <div class="product-info">
-                    <div class="product-title">${p.name}</div>
-                    <div class="product-price">${(p.price||0).toLocaleString()} ₽</div>
-                    ${specs ? `<div class="product-specs">${specs}</div>` : ''}
-                    <button class="buy-btn">Купить</button>
-                </div>
-            `;
-            el.querySelector('.buy-btn').addEventListener('click', function() {
-                sendOrder(p, this);
+bot.command('addproduct', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) {
+        return ctx.reply('❌ Нет доступа');
+    }
+    try {
+        const categoriesSnapshot = await getDocs(collection(db, 'categories'));
+        const categories = [];
+        categoriesSnapshot.forEach(doc => {
+            const data = doc.data();
+            categories.push({ 
+                docId: doc.id,      // ID документа
+                id: data.id,        // поле id
+                name: data.name 
             });
-            list.appendChild(el);
         });
+        if (categories.length === 0) {
+            return ctx.reply('❌ Сначала добавьте категории через /addcategory');
+        }
+        tempData.set(userId, { step: 'select_category', categories: categories });
+        let categoryList = '📁 Доступные категории:\n\n';
+        categories.forEach((cat, index) => {
+            categoryList += `${index + 1}. ${cat.name} (ID документа: ${cat.docId})\n`;
+        });
+        categoryList += '\nВведите номер категории:';
+        await ctx.reply(categoryList);
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка загрузки категорий');
+    }
+});
 
-    } catch(e) {
-        console.error(e);
-        document.getElementById('app').innerHTML = `
-            <div class="nav-bar">
-                <button class="back-btn" onclick="showCategories()">←</button>
-                <h2>${categoryName}</h2>
-            </div>
-            <div class="empty">Ошибка: ${e.message}</div>
-        `;
+// ==================== УПРАВЛЕНИЕ ЗАКАЗАМИ ====================
+
+bot.command('orders', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) {
+        return ctx.reply('❌ Нет доступа');
+    }
+    try {
+        const snapshot = await getDocs(collection(db, 'orders'));
+        const orders = [];
+        snapshot.forEach(doc => orders.push({ id: doc.id, ...doc.data() }));
+        if (orders.length === 0) {
+            await ctx.reply('📭 Заказов нет');
+            return;
+        }
+        orders.sort((a, b) => new Date(b.date) - new Date(a.date));
+        let message = '📋 СПИСОК ЗАКАЗОВ\n\n';
+        orders.forEach((order, index) => {
+            const orderNumber = index + 1;
+            const date = order.date ? new Date(order.date).toLocaleString('ru-RU') : '—';
+            message += `${orderNumber}. ${order.productName}\n`;
+            message += `   👤 ${order.username || 'Не указан'}\n`;
+            message += `   💰 ${order.price?.toLocaleString() || 0} ₽\n`;
+            message += `   📅 ${date}\n`;
+            message += `   🆔 ${order.id.substring(0, 8)}...\n\n`;
+        });
+        message += `\n📊 Всего: ${orders.length} заказов\n`;
+        message += `💡 Для просмотра деталей: /order НОМЕР\n`;
+        message += `💡 Для удаления: /removeorder НОМЕР`;
+        await ctx.reply(message);
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка при загрузке заказов');
+    }
+});
+
+bot.command('order', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) {
+        return ctx.reply('❌ Нет доступа');
+    }
+    const args = ctx.message.text.split(' ');
+    if (args.length < 2) return ctx.reply('⚠️ Использование: /order НОМЕР\nПример: /order 1');
+    const orderNumber = parseInt(args[1]);
+    if (isNaN(orderNumber) || orderNumber < 1) return ctx.reply('❌ Введите корректный номер');
+    try {
+        const snapshot = await getDocs(collection(db, 'orders'));
+        const orders = [];
+        snapshot.forEach(doc => orders.push({ id: doc.id, ...doc.data() }));
+        if (orders.length === 0) return ctx.reply('📭 Заказов нет');
+        orders.sort((a, b) => new Date(b.date) - new Date(a.date));
+        if (orderNumber > orders.length) return ctx.reply(`❌ Заказа с номером ${orderNumber} не существует. Всего заказов: ${orders.length}`);
+        const order = orders[orderNumber - 1];
+        const date = order.date ? new Date(order.date).toLocaleString('ru-RU') : '—';
+        const message = `
+📦 ЗАКАЗ #${orderNumber}
+
+🆔 ID заказа: ${order.id}
+👤 Клиент: ${order.username ? '@' + order.username : 'Не указан'}
+🆔 User ID: ${order.userId || '—'}
+📝 Имя: ${order.firstName || '—'} ${order.lastName || ''}
+
+📱 Товар: ${order.productName}
+💾 Память: ${order.storage || '—'}
+🎨 Цвет: ${order.color || '—'}
+💰 Сумма: ${(order.price || 0).toLocaleString()} ₽
+
+📅 Дата: ${date}
+📌 Тип: ${order.type === 'custom' ? 'Заказ под заказ' : 'Обычный заказ'}
+
+💡 Для удаления: /removeorder ${orderNumber}
+        `.trim();
+        await ctx.reply(message);
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка при загрузке заказа');
+    }
+});
+
+bot.command('removeorder', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) return ctx.reply('❌ Нет доступа');
+    const args = ctx.message.text.split(' ');
+    if (args.length < 2) return ctx.reply('⚠️ Использование: /removeorder НОМЕР\nПример: /removeorder 1');
+    const orderNumber = parseInt(args[1]);
+    if (isNaN(orderNumber) || orderNumber < 1) return ctx.reply('❌ Введите корректный номер');
+    try {
+        const snapshot = await getDocs(collection(db, 'orders'));
+        const orders = [];
+        snapshot.forEach(doc => orders.push({ id: doc.id, ...doc.data() }));
+        if (orders.length === 0) return ctx.reply('📭 Заказов нет');
+        orders.sort((a, b) => new Date(b.date) - new Date(a.date));
+        if (orderNumber > orders.length) return ctx.reply(`❌ Заказа с номером ${orderNumber} не существует. Всего заказов: ${orders.length}`);
+        const order = orders[orderNumber - 1];
+        const orderId = order.id;
+        await ctx.reply(
+            `⚠️ ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ\n\n` +
+            `Вы действительно хотите удалить заказ #${orderNumber}?\n` +
+            `Товар: ${order.productName}\n` +
+            `Клиент: ${order.username || 'Не указан'}\n` +
+            `Сумма: ${(order.price || 0).toLocaleString()} ₽\n\n` +
+            `Для подтверждения отправьте: /confirm_${orderId}\n` +
+            `Для отмены: /cancel`
+        );
+        tempData.set(userId, { step: 'confirm_delete', orderId, orderNumber });
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка при удалении заказа');
+    }
+});
+
+bot.hears(/^\/confirm_(.+)$/, async (ctx) => {
+    const userId = ctx.from.id.toString();
+    const data = tempData.get(userId);
+    if (!data || data.step !== 'confirm_delete') return ctx.reply('❌ Нет активного подтверждения удаления');
+    const orderId = ctx.match[1];
+    if (data.orderId !== orderId) return ctx.reply('❌ Неверный ID заказа');
+    try {
+        await deleteDoc(doc(db, 'orders', orderId));
+        await ctx.reply(`✅ Заказ #${data.orderNumber} успешно удален!`);
+        tempData.delete(userId);
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка при удалении заказа');
+    }
+});
+
+bot.command('cancel', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    const data = tempData.get(userId);
+    if (!data || data.step !== 'confirm_delete') return ctx.reply('❌ Нет активного подтверждения удаления');
+    await ctx.reply(`❌ Удаление заказа #${data.orderNumber} отменено`);
+    tempData.delete(userId);
+});
+
+// ==================== АДМИНСКИЕ КОМАНДЫ ====================
+
+bot.command('admin', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) return ctx.reply('❌ Нет доступа');
+    let adminList = '👥 Администраторы:\n\n';
+    ADMIN_IDS.forEach((id, index) => { adminList += `${index + 1}. ${id}\n`; });
+    adminList += `\nВсего: ${ADMIN_IDS.length}`;
+    await ctx.reply(adminList);
+});
+
+bot.command('addadmin', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    const args = ctx.message.text.split(' ');
+    if (userId !== "7441684316") return ctx.reply('❌ Только главный администратор');
+    if (args.length < 2) return ctx.reply('⚠️ Использование: /addadmin <telegram_id>');
+    const newAdminId = args[1];
+    if (ADMIN_IDS.includes(newAdminId)) return ctx.reply('⚠️ Этот пользователь уже администратор');
+    ADMIN_IDS.push(newAdminId);
+    await saveAdminsToDB(ADMIN_IDS);
+    await ctx.reply(`✅ Администратор добавлен!\nID: ${newAdminId}`);
+});
+
+bot.command('removeadmin', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    const args = ctx.message.text.split(' ');
+    if (userId !== "7441684316") return ctx.reply('❌ Только главный администратор');
+    if (args.length < 2) return ctx.reply('⚠️ Использование: /removeadmin <telegram_id>');
+    const removeId = args[1];
+    if (removeId === userId) return ctx.reply('❌ Нельзя удалить себя');
+    const index = ADMIN_IDS.indexOf(removeId);
+    if (index === -1) return ctx.reply('⚠️ Этот пользователь не администратор');
+    ADMIN_IDS.splice(index, 1);
+    await saveAdminsToDB(ADMIN_IDS);
+    await ctx.reply(`✅ Администратор удален!\nID: ${removeId}`);
+});
+
+bot.command('checkorders', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) return ctx.reply('❌ Нет доступа');
+    try {
+        const snapshot = await getDocs(collection(db, 'orders'));
+        const orders = [];
+        snapshot.forEach(doc => orders.push(doc.data()));
+        if (orders.length === 0) await ctx.reply('📭 Заказов нет');
+        else {
+            const last = orders[orders.length - 1];
+            await ctx.reply(`📊 Статистика заказов:\n\nВсего: ${orders.length}\nПоследний: ${last.productName || 'Заказ под заказ'} (${last.username})\nВремя: ${last.date ? new Date(last.date).toLocaleString('ru-RU') : '—'}`);
+        }
+    } catch (error) { await ctx.reply('❌ Ошибка при проверке'); }
+});
+
+bot.command('testorder', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    if (!ADMIN_IDS.includes(userId)) return ctx.reply('❌ Нет доступа');
+    const testMessage = `🛍 ТЕСТОВОЕ УВЕДОМЛЕНИЕ\n\n👤 Клиент: @testuser\n🆔 ID: 123456789\n\n📱 Товар: iPhone 17 (тест)\n💾 Память: 256GB\n🎨 Цвет: Black\n💰 Сумма: 99 900 ₽\n\n📅 Время: ${new Date().toLocaleString('ru-RU')}`;
+    if (GROUP_CHAT_ID) await bot.telegram.sendMessage(GROUP_CHAT_ID, testMessage).catch(err => console.error('❌ Ошибка группы:', err.message));
+    await ctx.reply('✅ Тестовое уведомление отправлено в группу');
+});
+
+// ==================== ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ ====================
+
+bot.on('text', async (ctx) => {
+    if (ctx.message.text.startsWith('/')) return;
+    const userId = ctx.from.id.toString();
+    const data = tempData.get(userId);
+    if (!data) return;
+    const message = ctx.message.text;
+    
+    if (data.step === 'category_name') {
+        const rawName = message.trim();
+        const categoryId = rawName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        try {
+            await addDoc(collection(db, 'categories'), {
+                id: categoryId,
+                name: rawName,
+                order: 999,
+                image: null,
+                createdAt: new Date().toISOString()
+            });
+            await ctx.reply(`✅ Категория "${rawName}" добавлена!\nID категории: ${categoryId}\n\nТеперь можете добавить фото через /addcategoryphoto`);
+        } catch (error) {
+            console.error('Ошибка:', error);
+            await ctx.reply('❌ Ошибка при добавлении категории');
+        }
+        tempData.delete(userId);
+        return;
+    }
+    
+    if (data.step === 'select_category_for_photo') {
+        const num = parseInt(message);
+        if (isNaN(num) || num < 1 || num > data.categories.length) return ctx.reply(`❌ Введите номер от 1 до ${data.categories.length}`);
+        const selectedCategory = data.categories[num - 1];
+        tempData.set(userId, {
+            step: 'category_photo',
+            categoryId: selectedCategory.id,
+            categoryName: selectedCategory.name
+        });
+        await ctx.reply(`✅ Выбрано: ${selectedCategory.name}\n\n📸 Отправьте фото для этой категории:`);
+        return;
+    }
+    
+    if (data.step === 'select_category') {
+        const num = parseInt(message);
+        if (isNaN(num) || num < 1 || num > data.categories.length) return ctx.reply(`❌ Введите номер от 1 до ${data.categories.length}`);
+        const selectedCategory = data.categories[num - 1];
+        tempData.set(userId, {
+            step: 'product_name',
+            categoryId: selectedCategory.docId,
+            categoryName: selectedCategory.name
+        });
+        await ctx.reply(`✅ Выбрано: ${selectedCategory.name}\n\n📱 Введите название модели:`);
+        return;
+    }
+    
+    if (data.step === 'product_name') {
+        tempData.set(userId, { ...data, step: 'product_description', productName: message });
+        await ctx.reply('📝 Введите описание товара:');
+        return;
+    }
+    
+    if (data.step === 'product_description') {
+        tempData.set(userId, { ...data, step: 'product_storage', productDescription: message });
+        await ctx.reply('💾 Введите память (например: 128GB, 256GB) или напишите "нет":');
+        return;
+    }
+    
+    if (data.step === 'product_storage') {
+        tempData.set(userId, { ...data, step: 'product_color', productStorage: message.toLowerCase() === 'нет' ? '—' : message });
+        await ctx.reply('🎨 Введите цвет или напишите "нет":');
+        return;
+    }
+    
+    if (data.step === 'product_color') {
+        tempData.set(userId, { ...data, step: 'product_price', productColor: message.toLowerCase() === 'нет' ? '—' : message });
+        await ctx.reply('💰 Введите цену (только число):');
+        return;
+    }
+    
+    if (data.step === 'product_price') {
+        const price = parseInt(message);
+        if (isNaN(price)) return ctx.reply('❌ Введите число!');
+        tempData.set(userId, { ...data, step: 'product_image', productPrice: price });
+        await ctx.reply('📸 Отправьте фото товара:');
+    }
+});
+
+// ==================== ОБРАБОТКА ФОТО ====================
+
+bot.on('photo', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    const data = tempData.get(userId);
+    if (!data) return;
+    try {
+        const photo = ctx.message.photo[ctx.message.photo.length - 1];
+        const fileLink = await ctx.telegram.getFileLink(photo.file_id);
+        const imageUrl = fileLink.href;
+        
+        if (data.step === 'category_photo') {
+            const categoryRef = doc(db, 'categories', data.categoryId);
+            await updateDoc(categoryRef, { image: imageUrl });
+            await ctx.reply(`✅ Фото добавлено для категории "${data.categoryName}"!`);
+            tempData.delete(userId);
+            return;
+        }
+        
+        if (data.step === 'product_image') {
+            await addDoc(collection(db, 'products'), {
+                categoryId: data.categoryId,
+                name: data.productName,
+                description: data.productDescription,
+                storage: data.productStorage,
+                color: data.productColor,
+                price: data.productPrice,
+                image: imageUrl,
+                createdAt: new Date().toISOString()
+            });
+            await ctx.reply(`✅ Товар добавлен!\n\n📁 Категория: ${data.categoryName}\n📱 Модель: ${data.productName}\n📝 Описание: ${data.productDescription}\n💾 Память: ${data.productStorage}\n🎨 Цвет: ${data.productColor}\n💰 Цена: ${data.productPrice.toLocaleString()} ₽`);
+            tempData.delete(userId);
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        await ctx.reply('❌ Ошибка, попробуйте снова');
+        tempData.delete(userId);
+    }
+});
+
+// ==================== ЗАПУСК ====================
+
+async function startBot() {
+    try {
+        await loadAdminsFromDB();
+        await bot.telegram.deleteWebhook();
+        console.log('✅ Вебхук удален');
+        await bot.launch();
+        console.log('✅ Бот запущен');
+        setTimeout(async () => {
+            await bot.telegram.sendMessage("7441684316", "✅ Бот перезапущен! Категории и товары теперь создаются с правильными ID.\n\n📝 Инструкция:\n1. /addcategory - создать категорию\n2. /addproduct - добавить товар (выберите категорию по номеру)\n\nПосле этого товары появятся в магазине!");
+        }, 3000);
+    } catch (error) {
+        console.error('❌ Ошибка запуска:', error.message);
     }
 }
 
-window.showCategories = showCategories;
-window.showProducts   = showProducts;
+startBot();
 
-// ---- Modal ----
-const modal = document.getElementById('customModal');
-document.getElementById('customOrderBtn').onclick  = () => modal.classList.add('active');
-document.getElementById('closeModalBtn').onclick   = () => modal.classList.remove('active');
-document.getElementById('submitCustomBtn').onclick = async () => {
-    const txt = document.getElementById('customComment').value.trim();
-    if (!txt) { tg.showAlert('Напишите, что вы ищете'); return; }
-    await sendCustomOrder(txt);
-    modal.classList.remove('active');
-    document.getElementById('customComment').value = '';
-};
-
-showCategories();
-    </script>
-</body>
-</html>
+process.once('SIGINT', () => {
+    bot.stop('SIGINT');
+    server.close();
+});
+process.once('SIGTERM', () => {
+    bot.stop('SIGTERM');
+    server.close();
+});
