@@ -109,14 +109,18 @@ async function loadAdminsFromDB() {
 
 bot.start(async (ctx) => {
     await ctx.reply(
-        '🍎 Добро пожаловать в магазин "Яблочный"!\n\n' +
-        'Используйте кнопку внизу экрана, чтобы открыть магазин.'
+        '— Яблочный —\n' +
+        'Магазин техники Apple\n\n' +
+        'Выберите устройство, нажмите «Купить» — и мы свяжемся с вами.\n\n' +
+        'Не нашли то, что искали?\n' +
+        'Нажмите «Заказать под заказ» — мы привезём под заказ.\n\n' +
+        'Каталог открывается кнопкой внизу.'
     );
 });
 
 bot.command('help', async (ctx) => {
     const isAdmin = ADMIN_IDS.includes(ctx.from.id.toString());
-    let helpText = `🍎 Яблочный магазин
+    let helpText = `— Яблочный —
 
 🛍 Для открытия магазина используйте кнопку внизу экрана.
 
@@ -210,8 +214,8 @@ bot.command('addproduct', async (ctx) => {
         categoriesSnapshot.forEach(doc => {
             const data = doc.data();
             categories.push({ 
-                docId: doc.id,      // ID документа
-                id: data.id,        // поле id
+                docId: doc.id,
+                id: data.id,
                 name: data.name 
             });
         });
