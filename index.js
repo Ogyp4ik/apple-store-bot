@@ -24,6 +24,7 @@ const ADMIN_IDS = [
 ];
 
 const GROUP_CHAT_ID = -1003850642883;
+const PHOTO_CHANNEL_ID = -1003753979749; // ID канала для хранения фото
 
 // ==================== ИНИЦИАЛИЗАЦИЯ ====================
 
@@ -74,6 +75,22 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 
 const bot = new Telegraf(BOT_TOKEN);
 const tempData = new Map();
+
+// ==================== ФУНКЦИЯ СОХРАНЕНИЯ ФОТО В КАНАЛ ====================
+
+async function savePhotoToChannel(fileId) {
+    try {
+        // Отправляем фото в канал
+        const sentMessage = await bot.telegram.sendPhoto(PHOTO_CHANNEL_ID, fileId);
+        // Получаем постоянную ссылку на фото из канала
+        const fileLink = await bot.telegram.getFileLink(sentMessage.photo[0].file_id);
+        console.log('✅ Фото сохранено в канал:', fileLink.href);
+        return fileLink.href;
+    } catch (error) {
+        console.error('❌ Ошибка сохранения фото в канал:', error);
+        throw error;
+    }
+}
 
 // ==================== ФУНКЦИИ АДМИНОВ ====================
 
@@ -191,7 +208,7 @@ bot.command('addcategoryphoto', async (ctx) => {
         tempData.set(userId, { step: 'select_category_for_photo', categories: categories });
         let categoryList = '📁 Выберите категорию для добавления фото:\n\n';
         categories.forEach((cat, index) => {
-            categoryList += `${index + 1}. ${cat.name} (ID: ${cat.id})\n`;
+            categoryList += `${index + 1}. ${cat.name}\n`;
         });
         categoryList += '\nВведите номер категории:';
         await ctx.reply(categoryList);
@@ -523,14 +540,16 @@ bot.on('photo', async (ctx) => {
     const userId = ctx.from.id.toString();
     const data = tempData.get(userId);
     if (!data) return;
+    
     try {
         const photo = ctx.message.photo[ctx.message.photo.length - 1];
-        const fileLink = await ctx.telegram.getFileLink(photo.file_id);
-        const imageUrl = fileLink.href;
+        
+        // Сохраняем фото в канал и получаем постоянную ссылку
+        const permanentUrl = await savePhotoToChannel(photo.file_id);
         
         if (data.step === 'category_photo') {
             const categoryRef = doc(db, 'categories', data.categoryId);
-            await updateDoc(categoryRef, { image: imageUrl });
+            await updateDoc(categoryRef, { image: permanentUrl });
             await ctx.reply(`✅ Фото добавлено для категории "${data.categoryName}"!`);
             tempData.delete(userId);
             return;
@@ -544,15 +563,24 @@ bot.on('photo', async (ctx) => {
                 storage: data.productStorage,
                 color: data.productColor,
                 price: data.productPrice,
-                image: imageUrl,
+                image: permanentUrl,
                 createdAt: new Date().toISOString()
             });
-            await ctx.reply(`✅ Товар добавлен!\n\n📁 Категория: ${data.categoryName}\n📱 Модель: ${data.productName}\n📝 Описание: ${data.productDescription}\n💾 Память: ${data.productStorage}\n🎨 Цвет: ${data.productColor}\n💰 Цена: ${data.productPrice.toLocaleString()} ₽`);
+            await ctx.reply(
+                `✅ Товар добавлен!\n\n` +
+                `📁 Категория: ${data.categoryName}\n` +
+                `📱 Модель: ${data.productName}\n` +
+                `📝 Описание: ${data.productDescription}\n` +
+                `💾 Память: ${data.productStorage}\n` +
+                `🎨 Цвет: ${data.productColor}\n` +
+                `💰 Цена: ${data.productPrice.toLocaleString()} ₽`
+            );
             tempData.delete(userId);
         }
+        
     } catch (error) {
         console.error('Ошибка:', error);
-        await ctx.reply('❌ Ошибка, попробуйте снова');
+        await ctx.reply('❌ Ошибка при обработке фото. Попробуйте снова.');
         tempData.delete(userId);
     }
 });
@@ -567,7 +595,7 @@ async function startBot() {
         await bot.launch();
         console.log('✅ Бот запущен');
         setTimeout(async () => {
-            await bot.telegram.sendMessage("7441684316", "✅ Бот перезапущен! Категории и товары теперь создаются с правильными ID.\n\n📝 Инструкция:\n1. /addcategory - создать категорию\n2. /addproduct - добавить товар (выберите категорию по номеру)\n\nПосле этого товары появятся в магазине!");
+            await bot.telegram.sendMessage("7441684316", "✅ Бот перезапущен! Фото теперь сохраняются в канал и не пропадают.");
         }, 3000);
     } catch (error) {
         console.error('❌ Ошибка запуска:', error.message);
